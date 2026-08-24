@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Due Invoices Dashboard
 
-## Getting Started
+Live, searchable dashboard of outstanding due invoices for Isaac Wellness, reading
+from the **"Payment terms"** tab of the shared Google Sheet. Built with Next.js,
+deployed on Vercel.
 
-First, run the development server:
+Data is fetched fresh from Google Sheets on every page load (via `/api/data`) —
+this is not a static snapshot. Access is gated by a single shared password.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Local development
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+1. Copy `.env.example` to `.env.local` and fill in the three values:
+   - `GOOGLE_SHEET_ID` — the sheet's ID (from its URL, between `/d/` and `/edit`)
+   - `SERVICE_ACCOUNT_JSON` — the full contents of the Google service-account key
+     JSON file, as one line
+   - `DASHBOARD_PASSWORD` — whatever shared password you want to gate the
+     dashboard with locally
+2. Install dependencies and run:
+   ```bash
+   npm install
+   npm run dev
+   ```
+3. Open [http://localhost:3000](http://localhost:3000) — it'll redirect to
+   `/login` first.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deploying to Vercel
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Push this repo to GitHub.
+2. In Vercel, "Add New Project" → import this GitHub repo. It auto-detects
+   Next.js, no config needed.
+3. Before the first deploy (or in Project Settings → Environment Variables
+   afterward), add the same three variables as above: `GOOGLE_SHEET_ID`,
+   `SERVICE_ACCOUNT_JSON`, `DASHBOARD_PASSWORD`.
+4. Deploy. If `DASHBOARD_PASSWORD` is missing, every page will show a plain
+   500 error explaining that — set it and redeploy.
 
-## Learn More
+## How access control works
 
-To learn more about Next.js, take a look at the following resources:
+`src/proxy.ts` (Next.js's server-side request interceptor) checks for a cookie
+proving the visitor knows `DASHBOARD_PASSWORD`, redirecting to `/login` if it's
+missing. `/login` posts to `/api/login`, which checks the password against the
+env var and sets an `httpOnly` cookie (a hash of the password, not the password
+itself) on success. There's no user database — it's one shared password for
+anyone who needs to view the dashboard.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Data model
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+`src/lib/sheets.ts` reads the "Payment terms" tab directly via the Google
+Sheets API (read-only scope) and returns every line-item row, typed. The
+dashboard page (`src/app/page.tsx`) does all filtering/sorting/searching
+client-side against that full dataset — no server-side query params.
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Each row is one line item on an invoice — one invoice can have multiple rows
+(multiple purchased items). The 1st/2nd/3rd Payment Date/Amount columns are
+populated when staff have written a payment plan into that invoice's Invoice
+Notes in the source Zenoti report (see the separate `payment_notes_parser.py`
+tool in the `DUE INVOICE` project) — most rows won't have one yet.
