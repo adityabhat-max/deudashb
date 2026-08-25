@@ -56,6 +56,7 @@ export default function DashboardPage() {
   const [nextPaymentFilter, setNextPaymentFilter] = useState<"All" | "Has" | "None">("All");
   const [planFilter, setPlanFilter] = useState<"All" | "Has" | "None">("All");
   const [dueFilter, setDueFilter] = useState<"All" | "DueOnly" | "PaidOff">("All");
+  const [itemTypeFilter, setItemTypeFilter] = useState<string>("All");
   const [sortKey, setSortKey] = useState<SortKey>("due");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [selected, setSelected] = useState<InvoiceRow | null>(null);
@@ -87,6 +88,12 @@ export default function DashboardPage() {
     return Array.from(set).sort();
   }, [invoices]);
 
+  const itemTypes = useMemo(() => {
+    if (!invoices) return [];
+    const set = new Set(invoices.map((r) => r.itemType).filter(Boolean));
+    return Array.from(set).sort();
+  }, [invoices]);
+
   const soldByList = useMemo(() => {
     // Sourced from the Sheet6 staff roster (scoped to the selected center),
     // not from who happens to have a due invoice — so everyone on staff is
@@ -109,6 +116,7 @@ export default function DashboardPage() {
     return invoices.filter((r) => {
       if (center !== "All" && r.centerName !== center) return false;
       if (soldBy !== "All" && r.soldBy !== soldBy) return false;
+      if (itemTypeFilter !== "All" && r.itemType !== itemTypeFilter) return false;
 
       if (nextPaymentFilter === "Has" && !r.nextPaymentDate) return false;
       if (nextPaymentFilter === "None" && r.nextPaymentDate) return false;
@@ -126,7 +134,7 @@ export default function DashboardPage() {
         r.guestCode.toLowerCase().includes(q)
       );
     });
-  }, [invoices, query, center, soldBy, nextPaymentFilter, planFilter, dueFilter]);
+  }, [invoices, query, center, soldBy, itemTypeFilter, nextPaymentFilter, planFilter, dueFilter]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
@@ -149,29 +157,19 @@ export default function DashboardPage() {
     return { totalDue, invoiceCount: invoiceSet.size, centerCount: centerSet.size };
   }, [filtered]);
 
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir(key === "due" || key === "collected" ? "desc" : "asc");
-    }
+  function handleSortKeyChange(key: SortKey) {
+    setSortKey(key);
+    setSortDir(key === "due" || key === "collected" ? "desc" : "asc");
   }
 
-  function SortHeader({ label, sortKeyName }: { label: string; sortKeyName: SortKey }) {
-    const active = sortKey === sortKeyName;
-    return (
-      <th
-        className="text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-3 py-2.5 cursor-pointer select-none whitespace-nowrap"
-        onClick={() => toggleSort(sortKeyName)}
-      >
-        <span className={active ? "text-[#7a2e40]" : ""}>
-          {label}
-          {active ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
-        </span>
-      </th>
-    );
-  }
+  const sortOptions: { key: SortKey; label: string }[] = [
+    { key: "due", label: "Due" },
+    { key: "collected", label: "Collected" },
+    { key: "invoiceNo", label: "Invoice" },
+    { key: "guestName", label: "Guest" },
+    { key: "centerName", label: "Center" },
+    { key: "nextPaymentDate", label: "Next payment" },
+  ];
 
   return (
     <div className="min-h-screen bg-[#faf5f1] text-[#2a211d]">
@@ -232,6 +230,7 @@ export default function DashboardPage() {
           <div className="flex flex-wrap gap-3">
             <FilterSelect label="Center" value={center} onChange={handleCenterChange} options={centers} />
             <FilterSelect label="Sold by" value={soldBy} onChange={setSoldBy} options={soldByList} />
+            <FilterSelect label="Item type" value={itemTypeFilter} onChange={setItemTypeFilter} options={itemTypes} />
             <FilterSelect
               label="Next payment date"
               value={nextPaymentFilter}
@@ -255,6 +254,7 @@ export default function DashboardPage() {
             />
             {(center !== "All" ||
               soldBy !== "All" ||
+              itemTypeFilter !== "All" ||
               nextPaymentFilter !== "All" ||
               planFilter !== "All" ||
               dueFilter !== "All" ||
@@ -264,6 +264,7 @@ export default function DashboardPage() {
                   setQuery("");
                   setCenter("All");
                   setSoldBy("All");
+                  setItemTypeFilter("All");
                   setNextPaymentFilter("All");
                   setPlanFilter("All");
                   setDueFilter("All");
@@ -276,76 +277,86 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Table */}
-        <div className="bg-white border border-[#e7dcd4] rounded-xl shadow-sm overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[#e7dcd4]">
-                <SortHeader label="Invoice" sortKeyName="invoiceNo" />
-                <SortHeader label="Guest" sortKeyName="guestName" />
-                <SortHeader label="Center" sortKeyName="centerName" />
-                <th className="text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-3 py-2.5">
-                  Item
-                </th>
-                <SortHeader label="Due" sortKeyName="due" />
-                <SortHeader label="Collected" sortKeyName="collected" />
-                <SortHeader label="Next payment" sortKeyName="nextPaymentDate" />
-                <th className="text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-3 py-2.5">
-                  Plan
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && (
-                <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-[#a8988d]">
-                    Loading…
-                  </td>
-                </tr>
-              )}
-              {!loading && sorted.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-[#a8988d]">
-                    No matching invoices.
-                  </td>
-                </tr>
-              )}
-              {!loading &&
-                sorted.map((row, idx) => (
-                  <tr
-                    key={`${row.invoiceNo}-${idx}`}
-                    onClick={() => setSelected(row)}
-                    className="border-b border-[#f1ebe6] last:border-0 hover:bg-[#f6e2e7] cursor-pointer transition-colors"
-                  >
-                    <td className="px-3 py-2.5 font-medium whitespace-nowrap">{row.invoiceNo}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">{row.guestName}</td>
-                    <td className="px-3 py-2.5 text-[#7a685e] whitespace-nowrap">{row.centerName}</td>
-                    <td className="px-3 py-2.5 text-[#7a685e] max-w-[220px] truncate">{row.itemName}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums font-medium">₹{formatINR(row.due)}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-[#7a685e]">
-                      ₹{formatINR(row.collected)}
-                    </td>
-                    <td className="px-3 py-2.5 text-[#7a685e] whitespace-nowrap">
-                      {row.nextPaymentDate || "—"}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {hasPaymentPlan(row) ? (
-                        <span className="inline-flex items-center rounded-full bg-[#e3ece7] text-[#3f5f4f] text-xs font-medium px-2 py-0.5">
-                          Yes
-                        </span>
-                      ) : (
-                        <span className="text-[#c3b8ae] text-xs">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
+        {/* Sort control — a dropdown + direction toggle instead of clickable
+            column headers, since results render as stacked cards, not a table. */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <p className="text-xs text-[#a8988d]">
+            Showing {sorted.length} of {invoices?.length ?? 0} line items. Click a card for full detail.
+          </p>
+          <div className="flex items-center gap-2">
+            <label htmlFor="sort-by" className="text-xs text-[#a8988d]">
+              Sort by
+            </label>
+            <select
+              id="sort-by"
+              value={sortKey}
+              onChange={(e) => handleSortKeyChange(e.target.value as SortKey)}
+              className="border border-[#e7dcd4] rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2e40] focus:border-transparent"
+            >
+              {sortOptions.map((opt) => (
+                <option key={opt.key} value={opt.key}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+              className="text-sm px-2 py-1.5 rounded-lg border border-[#e7dcd4] bg-white hover:bg-[#f6e2e7] transition-colors"
+            >
+              {sortDir === "asc" ? "↑ Asc" : "↓ Desc"}
+            </button>
+          </div>
         </div>
 
-        <p className="text-xs text-[#a8988d] mt-3">
-          Showing {sorted.length} of {invoices?.length ?? 0} line items. Click a row for full detail.
-        </p>
+        {/* Results — a vertical card list, never a table that needs horizontal
+            scrolling. Every card wraps its own content instead of overflowing. */}
+        <div className="flex flex-col gap-2">
+          {loading && (
+            <div className="bg-white border border-[#e7dcd4] rounded-xl px-4 py-8 text-center text-[#a8988d] text-sm">
+              Loading…
+            </div>
+          )}
+          {!loading && sorted.length === 0 && (
+            <div className="bg-white border border-[#e7dcd4] rounded-xl px-4 py-8 text-center text-[#a8988d] text-sm">
+              No matching invoices.
+            </div>
+          )}
+          {!loading &&
+            sorted.map((row, idx) => (
+              <div
+                key={`${row.invoiceNo}-${idx}`}
+                onClick={() => setSelected(row)}
+                className="bg-white border border-[#e7dcd4] rounded-xl shadow-sm px-4 py-3 hover:bg-[#f6e2e7] cursor-pointer transition-colors"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+                  <div className="min-w-0">
+                    <p className="font-medium break-words">
+                      {row.invoiceNo} · {row.guestName}
+                    </p>
+                    <p className="text-sm text-[#7a685e] break-words">
+                      {row.centerName} · {row.itemName}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="font-semibold text-[#7a2e40] tabular-nums">₹{formatINR(row.due)}</p>
+                    <p className="text-xs text-[#a8988d]">due</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2.5 text-xs text-[#7a685e]">
+                  <span className="inline-flex items-center rounded-full bg-[#f1ebe6] text-[#7a685e] font-medium px-2 py-0.5">
+                    {row.itemType || "—"}
+                  </span>
+                  <span>Collected ₹{formatINR(row.collected)}</span>
+                  <span>Next payment: {row.nextPaymentDate || "—"}</span>
+                  {hasPaymentPlan(row) && (
+                    <span className="inline-flex items-center rounded-full bg-[#e3ece7] text-[#3f5f4f] font-medium px-2 py-0.5">
+                      Payment plan
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+        </div>
       </div>
 
       {selected && <DetailPanel row={selected} onClose={() => setSelected(null)} />}
@@ -397,6 +408,10 @@ function DetailPanel({ row, onClose }: { row: InvoiceRow; onClose: () => void })
           <div>
             <dt className="text-[#a8988d] text-xs uppercase tracking-wide mb-0.5">Item</dt>
             <dd>{row.itemName || "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-[#a8988d] text-xs uppercase tracking-wide mb-0.5">Item type</dt>
+            <dd>{row.itemType || "—"}</dd>
           </div>
           <div>
             <dt className="text-[#a8988d] text-xs uppercase tracking-wide mb-0.5">Sold by</dt>

@@ -4,6 +4,7 @@ const SOURCE_TAB = "Payment terms";
 const ROSTER_TAB = "Sheet6";
 
 export interface InvoiceRow {
+  itemType: string;
   itemName: string;
   invoiceNo: string;
   guestCode: string;
@@ -55,7 +56,7 @@ export async function fetchInvoices(): Promise<InvoiceRow[]> {
   const { sheetId, sheets } = getSheetsClient();
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: sheetId,
-    range: `'${SOURCE_TAB}'!A1:Q10000`,
+    range: `'${SOURCE_TAB}'!A1:Z10000`,
   });
 
   const values = response.data.values || [];
@@ -65,6 +66,7 @@ export async function fetchInvoices(): Promise<InvoiceRow[]> {
   const idx = (name: string) => header.indexOf(name);
 
   const i = {
+    itemType: idx("Item Type"),
     itemName: idx("Item Name"),
     invoiceNo: idx("Invoice No"),
     guestCode: idx("Guest Code"),
@@ -90,6 +92,7 @@ export async function fetchInvoices(): Promise<InvoiceRow[]> {
     const get = (col: number) => (col >= 0 && col < row.length ? String(row[col] ?? "") : "");
 
     rows.push({
+      itemType: get(i.itemType),
       itemName: get(i.itemName),
       invoiceNo: get(i.invoiceNo),
       guestCode: get(i.guestCode),
