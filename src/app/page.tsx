@@ -45,6 +45,7 @@ function FilterSelect({
 
 export default function DashboardPage() {
   const [invoices, setInvoices] = useState<InvoiceRow[] | null>(null);
+  const [roster, setRoster] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -67,6 +68,7 @@ export default function DashboardPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load data");
       setInvoices(data.invoices);
+      setRoster(data.roster || {});
       setFetchedAt(data.fetchedAt);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load data");
@@ -86,11 +88,15 @@ export default function DashboardPage() {
   }, [invoices]);
 
   const soldByList = useMemo(() => {
-    if (!invoices) return [];
-    const scoped = center === "All" ? invoices : invoices.filter((r) => r.centerName === center);
-    const set = new Set(scoped.map((r) => r.soldBy).filter(Boolean));
-    return Array.from(set).sort();
-  }, [invoices, center]);
+    // Sourced from the Sheet6 staff roster (scoped to the selected center),
+    // not from who happens to have a due invoice — so everyone on staff is
+    // selectable, including people with zero invoices right now.
+    if (center === "All") {
+      const set = new Set(Object.values(roster).flat());
+      return Array.from(set).sort();
+    }
+    return [...(roster[center] || [])].sort();
+  }, [roster, center]);
 
   function handleCenterChange(next: string) {
     setCenter(next);

@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 
 const SOURCE_TAB = "Payment terms";
+const ROSTER_TAB = "Sheet6";
 
 export interface InvoiceRow {
   itemName: string;
@@ -34,7 +35,7 @@ function cleanOptionalNumber(raw: string): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
-export async function fetchInvoices(): Promise<InvoiceRow[]> {
+function getSheetsClient() {
   const sheetId = process.env.GOOGLE_SHEET_ID;
   const credsJson = process.env.SERVICE_ACCOUNT_JSON;
   if (!sheetId || !credsJson) {
@@ -47,7 +48,11 @@ export async function fetchInvoices(): Promise<InvoiceRow[]> {
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
   });
 
-  const sheets = google.sheets({ version: "v4", auth });
+  return { sheetId, sheets: google.sheets({ version: "v4", auth }) };
+}
+
+export async function fetchInvoices(): Promise<InvoiceRow[]> {
+  const { sheetId, sheets } = getSheetsClient();
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: sheetId,
     range: `'${SOURCE_TAB}'!A1:Q10000`,
@@ -106,4 +111,37 @@ export async function fetchInvoices(): Promise<InvoiceRow[]> {
   }
 
   return rows;
+}
+
+/**
+ * Sheet6 is a roster grid, not a normal table: row 1 has one column per
+ * center, and each column lists (downward, ragged length) the staff who
+ * work there. Returns { centerName: [person, ...] }.
+ */
+export async function fetchRoster(): Promise<Record<string, string[]>> {
+  const { sheetId, sheets } = getSheetsClient();
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: sheetId,
+    range: `'${ROSTER_TAB}'!A1:ZZ1000`,
+  });
+
+  const values = response.data.values || [];
+  if (values.length === 0) return {};
+
+  const header = values[0] as string[];
+  const rows = values.slice(1);
+
+  const roster: Record<string, string[]> = {};
+  header.forEach((rawCenter, colIdx) => {
+    const center = (rawCenter || "").toString().trim();
+    if (!center) return;
+    const people: string[] = [];
+    for (const row of rows) {
+      const name = (row[colIdx] || "").toString().trim();
+      if (name) people.push(name);
+    }
+    roster[center] = people;
+  });
+
+  return roster;
 }
