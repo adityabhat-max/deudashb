@@ -72,7 +72,6 @@ export default function DashboardPage() {
   const [invoices, setInvoices] = useState<InvoiceRow[] | null>(null);
   const [roster, setRoster] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
-  const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [query, setQuery] = useState("");
@@ -95,7 +94,6 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error(data.error || "Failed to load data");
       setInvoices(data.invoices);
       setRoster(data.roster || {});
-      setFetchedAt(data.fetchedAt);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load data");
     } finally {
@@ -229,8 +227,7 @@ export default function DashboardPage() {
             </button>
           </div>
           <p className="text-sm text-[#a8988d] mt-2">
-            Live from the &quot;Payment terms&quot; sheet
-            {fetchedAt ? ` · fetched ${new Date(fetchedAt).toLocaleString("en-IN")}` : ""}
+            Live from the &quot;Payment terms&quot; sheet · Due invoices from 12 Aug 2026 to today
           </p>
         </header>
 
