@@ -87,9 +87,15 @@ export default function DashboardPage() {
 
   const soldByList = useMemo(() => {
     if (!invoices) return [];
-    const set = new Set(invoices.map((r) => r.soldBy).filter(Boolean));
+    const scoped = center === "All" ? invoices : invoices.filter((r) => r.centerName === center);
+    const set = new Set(scoped.map((r) => r.soldBy).filter(Boolean));
     return Array.from(set).sort();
-  }, [invoices]);
+  }, [invoices, center]);
+
+  function handleCenterChange(next: string) {
+    setCenter(next);
+    setSoldBy("All"); // avoid landing on a Sold By value that doesn't exist at the new center
+  }
 
   const filtered = useMemo(() => {
     if (!invoices) return [];
@@ -218,7 +224,7 @@ export default function DashboardPage() {
             className="w-full border border-[#e7dcd4] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2e40] focus:border-transparent mb-3"
           />
           <div className="flex flex-wrap gap-3">
-            <FilterSelect label="Center" value={center} onChange={setCenter} options={centers} />
+            <FilterSelect label="Center" value={center} onChange={handleCenterChange} options={centers} />
             <FilterSelect label="Sold by" value={soldBy} onChange={setSoldBy} options={soldByList} />
             <FilterSelect
               label="Next payment date"
