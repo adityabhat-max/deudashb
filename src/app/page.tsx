@@ -244,7 +244,7 @@ export default function DashboardPage() {
             (due-only, always reflecting the full type breakdown within the
             other active filters). Auto-fit keeps every card the same width
             and perfectly aligned no matter how many item types exist. */}
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3 mb-6">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(9.375rem,1fr))] gap-3 mb-6">
           <KpiCard label="Total due" value={loading ? "…" : `₹${formatINR(totals.totalDue)}`} emphasize />
           <KpiCard label="Invoices" value={loading ? "…" : String(totals.invoiceCount)} />
           {itemTypeBreakdown.map(({ type, due }) => (
