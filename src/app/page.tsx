@@ -14,6 +14,35 @@ function hasPaymentPlan(row: InvoiceRow): boolean {
   return Boolean(row.payment1Date);
 }
 
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+  optionLabels,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  optionLabels?: Record<string, string>;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="border border-[#e7dcd4] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2e40] focus:border-transparent"
+    >
+      <option value="All">{label}: All</option>
+      {options.map((opt) => (
+        <option key={opt} value={opt}>
+          {optionLabels?.[opt] ?? opt}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 export default function DashboardPage() {
   const [invoices, setInvoices] = useState<InvoiceRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -22,6 +51,10 @@ export default function DashboardPage() {
 
   const [query, setQuery] = useState("");
   const [center, setCenter] = useState<string>("All");
+  const [soldBy, setSoldBy] = useState<string>("All");
+  const [nextPaymentFilter, setNextPaymentFilter] = useState<"All" | "Has" | "None">("All");
+  const [planFilter, setPlanFilter] = useState<"All" | "Has" | "None">("All");
+  const [dueFilter, setDueFilter] = useState<"All" | "DueOnly" | "PaidOff">("All");
   const [sortKey, setSortKey] = useState<SortKey>("due");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [selected, setSelected] = useState<InvoiceRow | null>(null);
@@ -52,11 +85,28 @@ export default function DashboardPage() {
     return Array.from(set).sort();
   }, [invoices]);
 
+  const soldByList = useMemo(() => {
+    if (!invoices) return [];
+    const set = new Set(invoices.map((r) => r.soldBy).filter(Boolean));
+    return Array.from(set).sort();
+  }, [invoices]);
+
   const filtered = useMemo(() => {
     if (!invoices) return [];
     const q = query.trim().toLowerCase();
     return invoices.filter((r) => {
       if (center !== "All" && r.centerName !== center) return false;
+      if (soldBy !== "All" && r.soldBy !== soldBy) return false;
+
+      if (nextPaymentFilter === "Has" && !r.nextPaymentDate) return false;
+      if (nextPaymentFilter === "None" && r.nextPaymentDate) return false;
+
+      if (planFilter === "Has" && !hasPaymentPlan(r)) return false;
+      if (planFilter === "None" && hasPaymentPlan(r)) return false;
+
+      if (dueFilter === "DueOnly" && r.due <= 0) return false;
+      if (dueFilter === "PaidOff" && r.due > 0) return false;
+
       if (!q) return true;
       return (
         r.invoiceNo.toLowerCase().includes(q) ||
@@ -64,7 +114,7 @@ export default function DashboardPage() {
         r.guestCode.toLowerCase().includes(q)
       );
     });
-  }, [invoices, query, center]);
+  }, [invoices, query, center, soldBy, nextPaymentFilter, planFilter, dueFilter]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
@@ -159,26 +209,59 @@ export default function DashboardPage() {
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap gap-3 mb-4">
+        <div className="bg-white border border-[#e7dcd4] rounded-xl p-4 mb-4 shadow-sm">
           <input
             type="text"
             placeholder="Search invoice no. or guest name…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="flex-1 min-w-[240px] border border-[#e7dcd4] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2e40] focus:border-transparent"
+            className="w-full border border-[#e7dcd4] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2e40] focus:border-transparent mb-3"
           />
-          <select
-            value={center}
-            onChange={(e) => setCenter(e.target.value)}
-            className="border border-[#e7dcd4] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2e40] focus:border-transparent"
-          >
-            <option value="All">All centers</option>
-            {centers.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+          <div className="flex flex-wrap gap-3">
+            <FilterSelect label="Center" value={center} onChange={setCenter} options={centers} />
+            <FilterSelect label="Sold by" value={soldBy} onChange={setSoldBy} options={soldByList} />
+            <FilterSelect
+              label="Next payment date"
+              value={nextPaymentFilter}
+              onChange={(v) => setNextPaymentFilter(v as typeof nextPaymentFilter)}
+              options={["Has", "None"]}
+              optionLabels={{ Has: "Has a date", None: "No date set" }}
+            />
+            <FilterSelect
+              label="Payment plan"
+              value={planFilter}
+              onChange={(v) => setPlanFilter(v as typeof planFilter)}
+              options={["Has", "None"]}
+              optionLabels={{ Has: "Has a plan", None: "No plan" }}
+            />
+            <FilterSelect
+              label="Due status"
+              value={dueFilter}
+              onChange={(v) => setDueFilter(v as typeof dueFilter)}
+              options={["DueOnly", "PaidOff"]}
+              optionLabels={{ DueOnly: "Still due", PaidOff: "Fully collected" }}
+            />
+            {(center !== "All" ||
+              soldBy !== "All" ||
+              nextPaymentFilter !== "All" ||
+              planFilter !== "All" ||
+              dueFilter !== "All" ||
+              query) && (
+              <button
+                onClick={() => {
+                  setQuery("");
+                  setCenter("All");
+                  setSoldBy("All");
+                  setNextPaymentFilter("All");
+                  setPlanFilter("All");
+                  setDueFilter("All");
+                }}
+                className="text-sm px-3 py-1.5 rounded-lg text-[#7a2e40] hover:bg-[#f6e2e7] transition-colors"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Table */}
