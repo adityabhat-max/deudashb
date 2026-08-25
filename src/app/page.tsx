@@ -14,6 +14,31 @@ function hasPaymentPlan(row: InvoiceRow): boolean {
   return Boolean(row.payment1Date);
 }
 
+function KpiCard({
+  label,
+  value,
+  emphasize,
+}: {
+  label: string;
+  value: string;
+  emphasize?: boolean;
+}) {
+  return (
+    <div className="bg-white border border-[#e7dcd4] rounded-xl p-5 shadow-sm min-w-0">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[#a8988d] mb-2 truncate">
+        {label}
+      </p>
+      <p
+        className={`text-2xl font-semibold tabular-nums truncate ${
+          emphasize ? "text-[#7a2e40]" : "text-[#2a211d]"
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
 function FilterSelect({
   label,
   value,
@@ -110,13 +135,16 @@ export default function DashboardPage() {
     setSoldBy("All"); // avoid landing on a Sold By value that doesn't exist at the new center
   }
 
-  const filtered = useMemo(() => {
+  // Everything except the Item Type filter — the item-type KPI cards use
+  // this (not `filtered`) so they always show the full type breakdown
+  // within the rest of the current filter context, even once a single type
+  // is selected below.
+  const baseFiltered = useMemo(() => {
     if (!invoices) return [];
     const q = query.trim().toLowerCase();
     return invoices.filter((r) => {
       if (center !== "All" && r.centerName !== center) return false;
       if (soldBy !== "All" && r.soldBy !== soldBy) return false;
-      if (itemTypeFilter !== "All" && r.itemType !== itemTypeFilter) return false;
 
       if (nextPaymentFilter === "Has" && !r.nextPaymentDate) return false;
       if (nextPaymentFilter === "None" && r.nextPaymentDate) return false;
@@ -134,7 +162,20 @@ export default function DashboardPage() {
         r.guestCode.toLowerCase().includes(q)
       );
     });
-  }, [invoices, query, center, soldBy, itemTypeFilter, nextPaymentFilter, planFilter, dueFilter]);
+  }, [invoices, query, center, soldBy, nextPaymentFilter, planFilter, dueFilter]);
+
+  const filtered = useMemo(() => {
+    if (itemTypeFilter === "All") return baseFiltered;
+    return baseFiltered.filter((r) => r.itemType === itemTypeFilter);
+  }, [baseFiltered, itemTypeFilter]);
+
+  const itemTypeBreakdown = useMemo(() => {
+    const due = new Map<string, number>();
+    for (const r of baseFiltered) {
+      due.set(r.itemType, (due.get(r.itemType) || 0) + r.due);
+    }
+    return itemTypes.map((type) => ({ type, due: due.get(type) || 0 }));
+  }, [baseFiltered, itemTypes]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
@@ -153,8 +194,7 @@ export default function DashboardPage() {
   const totals = useMemo(() => {
     const totalDue = filtered.reduce((sum, r) => sum + r.due, 0);
     const invoiceSet = new Set(filtered.map((r) => r.invoiceNo).filter(Boolean));
-    const centerSet = new Set(filtered.map((r) => r.centerName));
-    return { totalDue, invoiceCount: invoiceSet.size, centerCount: centerSet.size };
+    return { totalDue, invoiceCount: invoiceSet.size };
   }, [filtered]);
 
   function handleSortKeyChange(key: SortKey) {
@@ -200,22 +240,16 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* KPI row */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-          <div className="bg-white border border-[#e7dcd4] rounded-xl p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[#a8988d] mb-2">Total due</p>
-            <p className="text-3xl font-semibold text-[#7a2e40]">
-              {loading ? "…" : `₹${formatINR(totals.totalDue)}`}
-            </p>
-          </div>
-          <div className="bg-white border border-[#e7dcd4] rounded-xl p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[#a8988d] mb-2">Invoices</p>
-            <p className="text-3xl font-semibold">{loading ? "…" : totals.invoiceCount}</p>
-          </div>
-          <div className="bg-white border border-[#e7dcd4] rounded-xl p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[#a8988d] mb-2">Centers</p>
-            <p className="text-3xl font-semibold">{loading ? "…" : totals.centerCount}</p>
-          </div>
+        {/* KPI row — Total due + Invoices, then one card per Item Type
+            (due-only, always reflecting the full type breakdown within the
+            other active filters). Auto-fit keeps every card the same width
+            and perfectly aligned no matter how many item types exist. */}
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3 mb-6">
+          <KpiCard label="Total due" value={loading ? "…" : `₹${formatINR(totals.totalDue)}`} emphasize />
+          <KpiCard label="Invoices" value={loading ? "…" : String(totals.invoiceCount)} />
+          {itemTypeBreakdown.map(({ type, due }) => (
+            <KpiCard key={type} label={`${type} due`} value={loading ? "…" : `₹${formatINR(due)}`} emphasize />
+          ))}
         </div>
 
         {/* Filters */}
