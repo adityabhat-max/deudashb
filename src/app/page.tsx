@@ -14,6 +14,29 @@ function hasPaymentPlan(row: InvoiceRow): boolean {
   return Boolean(row.payment1Date);
 }
 
+// Sheet stores Sale Date as "DD-MM-YYYY" (confirmed against the live
+// sheet). Pure string conversion to "YYYY-MM-DD" — no Date object, no
+// timezone ambiguity — so range comparisons are just string comparisons.
+function saleDateToIso(s: string): string | null {
+  const m = s.trim().match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (!m) return null;
+  const [, dd, mm, yyyy] = m;
+  return `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
+}
+
+// Client-only (called from an effect after mount, never during the
+// server render pass) so "yesterday" reflects the viewer's own local
+// timezone rather than the server's — those can disagree on which
+// calendar day it is for hours at a time otherwise.
+function getYesterdayIso(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function KpiCard({
   label,
   value,
@@ -81,6 +104,13 @@ export default function DashboardPage() {
   const [planFilter, setPlanFilter] = useState<"All" | "Has" | "None">("All");
   const [dueFilter, setDueFilter] = useState<"All" | "DueOnly" | "PaidOff">("All");
   const [itemTypeFilter, setItemTypeFilter] = useState<string>("All");
+  // Sale Date range filter. saleDateEnd defaults to "yesterday" (set in
+  // the mount effect below, client-side only) — today's rows are
+  // excluded by default since a same-day scrape may still be
+  // incomplete; widen this to include today whenever that's wanted.
+  // saleDateStart stays open-ended by default (no lower bound).
+  const [saleDateStart, setSaleDateStart] = useState<string>("");
+  const [saleDateEnd, setSaleDateEnd] = useState<string>("");
   const [sortKey, setSortKey] = useState<SortKey>("due");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [selected, setSelected] = useState<InvoiceRow | null>(null);
@@ -103,6 +133,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     load();
+    setSaleDateEnd(getYesterdayIso());
   }, []);
 
   const centers = useMemo(() => {
@@ -153,6 +184,15 @@ export default function DashboardPage() {
       if (dueFilter === "DueOnly" && r.due <= 0) return false;
       if (dueFilter === "PaidOff" && r.due > 0) return false;
 
+      if (saleDateStart || saleDateEnd) {
+        const iso = saleDateToIso(r.saleDate);
+        // Rows with an unparseable/blank Sale Date are excluded once any
+        // date bound is active — there's no date to judge them against.
+        if (!iso) return false;
+        if (saleDateStart && iso < saleDateStart) return false;
+        if (saleDateEnd && iso > saleDateEnd) return false;
+      }
+
       if (!q) return true;
       return (
         r.invoiceNo.toLowerCase().includes(q) ||
@@ -160,7 +200,7 @@ export default function DashboardPage() {
         r.guestCode.toLowerCase().includes(q)
       );
     });
-  }, [invoices, query, center, soldBy, nextPaymentFilter, planFilter, dueFilter]);
+  }, [invoices, query, center, soldBy, nextPaymentFilter, planFilter, dueFilter, saleDateStart, saleDateEnd]);
 
   const filtered = useMemo(() => {
     if (itemTypeFilter === "All") return baseFiltered;
@@ -246,7 +286,7 @@ export default function DashboardPage() {
             </button>
           </div>
           <p className="text-sm text-[#a8988d] mt-2">
-            Live from the &quot;Payment terms&quot; sheet · Due invoices from 12 Aug 2026 to today
+            Live from the &quot;Payment terms&quot; sheet · Due invoices from 12 Aug 2026 to yesterday
           </p>
         </header>
 
@@ -277,10 +317,28 @@ export default function DashboardPage() {
             onChange={(e) => setQuery(e.target.value)}
             className="w-full border border-[#e7dcd4] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2e40] focus:border-transparent mb-3"
           />
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <FilterSelect label="Center" value={center} onChange={handleCenterChange} options={centers} />
             <FilterSelect label="Sold by" value={soldBy} onChange={setSoldBy} options={soldByList} />
             <FilterSelect label="Item type" value={itemTypeFilter} onChange={setItemTypeFilter} options={itemTypes} />
+            <div className="flex items-center gap-1.5 text-sm text-[#7a685e]">
+              <span>Sale date</span>
+              <input
+                type="date"
+                aria-label="Sale date from"
+                value={saleDateStart}
+                onChange={(e) => setSaleDateStart(e.target.value)}
+                className="border border-[#e7dcd4] rounded-lg px-2 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2e40] focus:border-transparent"
+              />
+              <span className="text-[#a8988d]">to</span>
+              <input
+                type="date"
+                aria-label="Sale date to"
+                value={saleDateEnd}
+                onChange={(e) => setSaleDateEnd(e.target.value)}
+                className="border border-[#e7dcd4] rounded-lg px-2 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2e40] focus:border-transparent"
+              />
+            </div>
             <FilterSelect
               label="Next payment date"
               value={nextPaymentFilter}
@@ -308,6 +366,12 @@ export default function DashboardPage() {
               nextPaymentFilter !== "All" ||
               planFilter !== "All" ||
               dueFilter !== "All" ||
+              saleDateStart !== "" ||
+              // Comparing against a freshly-computed "yesterday" rather
+              // than a fixed default — moving the end date away from
+              // yesterday (e.g. widening to include today) counts as an
+              // active filter worth offering to clear back to baseline.
+              saleDateEnd !== getYesterdayIso() ||
               query) && (
               <button
                 onClick={() => {
@@ -318,6 +382,8 @@ export default function DashboardPage() {
                   setNextPaymentFilter("All");
                   setPlanFilter("All");
                   setDueFilter("All");
+                  setSaleDateStart("");
+                  setSaleDateEnd(getYesterdayIso());
                 }}
                 className="text-sm px-3 py-1.5 rounded-lg text-[#7a2e40] hover:bg-[#f6e2e7] transition-colors"
               >
