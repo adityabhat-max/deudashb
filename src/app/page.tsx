@@ -230,7 +230,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#faf5f1] text-[#2a211d]">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
+      <div className="w-full px-4 sm:px-8 lg:px-12 py-10">
         <header className="mb-8">
           <p className="text-xs font-semibold tracking-wide uppercase text-[#7a2e40] mb-2">
             Isaac Wellness · Due Invoices
