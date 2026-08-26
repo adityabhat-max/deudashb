@@ -96,6 +96,12 @@ export default function DashboardPage() {
   const [roster, setRoster] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // "all" for an admin account; an exact Center Name for a center-
+  // restricted account (server already filtered `invoices` to just that
+  // center — this only drives what the UI shows, e.g. hiding the Center
+  // filter, since there's nothing left to filter).
+  const [userEmail, setUserEmail] = useState<string>("");
+  const [userScope, setUserScope] = useState<string>("all");
 
   const [query, setQuery] = useState("");
   const [center, setCenter] = useState<string>("All");
@@ -124,6 +130,8 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error(data.error || "Failed to load data");
       setInvoices(data.invoices);
       setRoster(data.roster || {});
+      setUserEmail(data.email || "");
+      setUserScope(data.scope || "all");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load data");
     } finally {
@@ -135,6 +143,11 @@ export default function DashboardPage() {
     load();
     setSaleDateEnd(getYesterdayIso());
   }, []);
+
+  async function handleLogout() {
+    await fetch("/api/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
 
   const centers = useMemo(() => {
     if (!invoices) return [];
@@ -287,13 +300,28 @@ export default function DashboardPage() {
           </p>
           <div className="flex flex-wrap items-baseline justify-between gap-3">
             <h1 className="text-3xl font-serif">Due Invoices Dashboard</h1>
-            <button
-              onClick={load}
-              disabled={loading}
-              className="text-sm px-3 py-1.5 rounded-lg border border-[#e7dcd4] bg-white hover:bg-[#f6e2e7] transition-colors disabled:opacity-50"
-            >
-              {loading ? "Refreshing…" : "Refresh"}
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={load}
+                disabled={loading}
+                className="text-sm px-3 py-1.5 rounded-lg border border-[#e7dcd4] bg-white hover:bg-[#f6e2e7] transition-colors disabled:opacity-50"
+              >
+                {loading ? "Refreshing…" : "Refresh"}
+              </button>
+              {userEmail && (
+                <div className="flex items-center gap-2 text-sm text-[#a8988d]">
+                  <span className="truncate max-w-[12rem]" title={userEmail}>
+                    {userEmail}
+                  </span>
+                  <button
+                    onClick={handleLogout}
+                    className="text-[#7a2e40] hover:underline"
+                  >
+                    Log out
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           <p className="text-sm text-[#a8988d] mt-2">
             Live from the &quot;Payment terms&quot; sheet · Due invoices from 12 Aug 2026 to yesterday
@@ -328,7 +356,13 @@ export default function DashboardPage() {
             className="w-full border border-[#e7dcd4] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2e40] focus:border-transparent mb-3"
           />
           <div className="flex flex-wrap items-center gap-3">
-            <FilterSelect label="Center" value={center} onChange={handleCenterChange} options={centers} />
+            {userScope === "all" ? (
+              <FilterSelect label="Center" value={center} onChange={handleCenterChange} options={centers} />
+            ) : (
+              <span className="border border-[#e7dcd4] rounded-lg px-3 py-2 text-sm bg-[#faf5f1] text-[#7a685e]">
+                Center: {userScope}
+              </span>
+            )}
             <FilterSelect label="Sold by" value={soldBy} onChange={setSoldBy} options={soldByList} />
             <FilterSelect label="Item type" value={itemTypeFilter} onChange={setItemTypeFilter} options={itemTypes} />
             <div className="flex items-center gap-1.5 text-sm text-[#7a685e]">
