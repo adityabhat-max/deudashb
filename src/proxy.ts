@@ -1,33 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
-import { AUTH_COOKIE_NAME, sha256 } from "@/lib/auth";
+// import { AUTH_COOKIE_NAME, sha256 } from "@/lib/auth";
 
-const PUBLIC_PATHS = ["/login", "/api/login"];
+// const PUBLIC_PATHS = ["/login", "/api/login"];
 
-export async function proxy(req: NextRequest) {
-  const { pathname } = req.nextUrl;
+// Password gate temporarily disabled — restore the body below to re-enable.
+export async function proxy(_req: NextRequest) {
+  return NextResponse.next();
 
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
-    return NextResponse.next();
-  }
+  // const { pathname } = req.nextUrl;
 
-  const password = process.env.DASHBOARD_PASSWORD;
-  if (!password) {
-    return new NextResponse(
-      "DASHBOARD_PASSWORD is not set. Add it in your Vercel project's Environment Variables, then redeploy.",
-      { status: 500 }
-    );
-  }
+  // if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+  //   return NextResponse.next();
+  // }
 
-  const expected = await sha256(password);
-  const cookie = req.cookies.get(AUTH_COOKIE_NAME)?.value;
+  // const password = process.env.DASHBOARD_PASSWORD;
+  // if (!password) {
+  //   return new NextResponse(
+  //     "DASHBOARD_PASSWORD is not set. Add it in your Vercel project's Environment Variables, then redeploy.",
+  //     { status: 500 }
+  //   );
+  // }
 
-  if (cookie === expected) {
-    return NextResponse.next();
-  }
+  // const expected = await sha256(password);
+  // const cookie = req.cookies.get(AUTH_COOKIE_NAME)?.value;
 
-  const loginUrl = new URL("/login", req.url);
-  loginUrl.searchParams.set("next", pathname);
-  return NextResponse.redirect(loginUrl);
+  // if (cookie === expected) {
+  //   return NextResponse.next();
+  // }
+
+  // const loginUrl = new URL("/login", req.url);
+  // loginUrl.searchParams.set("next", pathname);
+  // return NextResponse.redirect(loginUrl);
 }
 
 export const config = {

@@ -195,19 +195,38 @@ export default function DashboardPage() {
     return { totalDue, invoiceCount: invoiceSet.size };
   }, [filtered]);
 
-  function handleSortKeyChange(key: SortKey) {
-    setSortKey(key);
-    setSortDir(key === "due" || key === "collected" ? "desc" : "asc");
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "due" || key === "collected" ? "desc" : "asc");
+    }
   }
 
-  const sortOptions: { key: SortKey; label: string }[] = [
-    { key: "due", label: "Due" },
-    { key: "collected", label: "Collected" },
-    { key: "invoiceNo", label: "Invoice" },
-    { key: "guestName", label: "Guest" },
-    { key: "centerName", label: "Center" },
-    { key: "nextPaymentDate", label: "Next payment" },
-  ];
+  function SortHeader({
+    label,
+    sortKeyName,
+    hideBelow,
+  }: {
+    label: string;
+    sortKeyName: SortKey;
+    hideBelow?: "sm" | "md";
+  }) {
+    const active = sortKey === sortKeyName;
+    const visibility = hideBelow === "sm" ? "hidden sm:table-cell" : hideBelow === "md" ? "hidden md:table-cell" : "";
+    return (
+      <th
+        className={`${visibility} text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-2 py-2.5 cursor-pointer select-none break-words`}
+        onClick={() => toggleSort(sortKeyName)}
+      >
+        <span className={active ? "text-[#7a2e40]" : ""}>
+          {label}
+          {active ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
+        </span>
+      </th>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#faf5f1] text-[#2a211d]">
@@ -308,86 +327,89 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Sort control — a dropdown + direction toggle instead of clickable
-            column headers, since results render as stacked cards, not a table. */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-          <p className="text-xs text-[#a8988d]">
-            Showing {sorted.length} of {invoices?.length ?? 0} line items. Click a card for full detail.
-          </p>
-          <div className="flex items-center gap-2">
-            <label htmlFor="sort-by" className="text-xs text-[#a8988d]">
-              Sort by
-            </label>
-            <select
-              id="sort-by"
-              value={sortKey}
-              onChange={(e) => handleSortKeyChange(e.target.value as SortKey)}
-              className="border border-[#e7dcd4] rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2e40] focus:border-transparent"
-            >
-              {sortOptions.map((opt) => (
-                <option key={opt.key} value={opt.key}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
-              className="text-sm px-2 py-1.5 rounded-lg border border-[#e7dcd4] bg-white hover:bg-[#f6e2e7] transition-colors"
-            >
-              {sortDir === "asc" ? "↑ Asc" : "↓ Desc"}
-            </button>
-          </div>
+        {/* Table — fixed-width columns summing to 100% so the table never
+            exceeds the viewport width; cells wrap instead of overflowing,
+            so the page only ever scrolls vertically, never sideways. Center,
+            item, type, collected, next payment and plan only join once
+            there's enough width to show them without cramming — they're
+            always available in the detail panel on tap/click regardless. */}
+        <div className="bg-white border border-[#e7dcd4] rounded-xl shadow-sm overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[#e7dcd4]">
+                <SortHeader label="Invoice" sortKeyName="invoiceNo" />
+                <SortHeader label="Guest" sortKeyName="guestName" />
+                <SortHeader label="Center" sortKeyName="centerName" hideBelow="sm" />
+                <th className="hidden md:table-cell text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-2 py-2.5 break-words">
+                  Item
+                </th>
+                <th className="hidden sm:table-cell text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-2 py-2.5 break-words">
+                  Type
+                </th>
+                <SortHeader label="Due" sortKeyName="due" />
+                <SortHeader label="Collected" sortKeyName="collected" hideBelow="md" />
+                <SortHeader label="Next payment" sortKeyName="nextPaymentDate" hideBelow="sm" />
+                <th className="hidden sm:table-cell text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-1.5 py-2.5 break-words">
+                  Plan
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && (
+                <tr>
+                  <td colSpan={9} className="px-3 py-8 text-center text-[#a8988d]">
+                    Loading…
+                  </td>
+                </tr>
+              )}
+              {!loading && sorted.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-3 py-8 text-center text-[#a8988d]">
+                    No matching invoices.
+                  </td>
+                </tr>
+              )}
+              {!loading &&
+                sorted.map((row, idx) => (
+                  <tr
+                    key={`${row.invoiceNo}-${idx}`}
+                    onClick={() => setSelected(row)}
+                    className="border-b border-[#f1ebe6] last:border-0 hover:bg-[#f6e2e7] cursor-pointer transition-colors align-top"
+                  >
+                    <td className="px-3 py-2.5 font-medium break-words">{row.invoiceNo}</td>
+                    <td className="px-3 py-2.5 break-words">{row.guestName}</td>
+                    <td className="hidden sm:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.centerName}</td>
+                    <td className="hidden md:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.itemName}</td>
+                    <td className="hidden sm:table-cell px-1.5 py-2.5">
+                      <span className="inline-flex items-center rounded-full bg-[#f1ebe6] text-[#7a685e] text-xs font-medium px-1.5 py-0.5">
+                        {row.itemType || "—"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums font-medium">₹{formatINR(row.due)}</td>
+                    <td className="hidden md:table-cell px-3 py-2.5 text-right tabular-nums text-[#7a685e]">
+                      ₹{formatINR(row.collected)}
+                    </td>
+                    <td className="hidden sm:table-cell px-3 py-2.5 text-[#7a685e] break-words">
+                      {row.nextPaymentDate || "—"}
+                    </td>
+                    <td className="hidden sm:table-cell px-1.5 py-2.5">
+                      {hasPaymentPlan(row) ? (
+                        <span className="inline-flex items-center rounded-full bg-[#e3ece7] text-[#3f5f4f] text-xs font-medium px-1.5 py-0.5">
+                          Yes
+                        </span>
+                      ) : (
+                        <span className="text-[#c3b8ae] text-xs">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
         </div>
 
-        {/* Results — a vertical card list, never a table that needs horizontal
-            scrolling. Every card wraps its own content instead of overflowing. */}
-        <div className="flex flex-col gap-2">
-          {loading && (
-            <div className="bg-white border border-[#e7dcd4] rounded-xl px-4 py-8 text-center text-[#a8988d] text-sm">
-              Loading…
-            </div>
-          )}
-          {!loading && sorted.length === 0 && (
-            <div className="bg-white border border-[#e7dcd4] rounded-xl px-4 py-8 text-center text-[#a8988d] text-sm">
-              No matching invoices.
-            </div>
-          )}
-          {!loading &&
-            sorted.map((row, idx) => (
-              <div
-                key={`${row.invoiceNo}-${idx}`}
-                onClick={() => setSelected(row)}
-                className="bg-white border border-[#e7dcd4] rounded-xl shadow-sm px-4 py-3 hover:bg-[#f6e2e7] cursor-pointer transition-colors"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
-                  <div className="min-w-0">
-                    <p className="font-medium break-words">
-                      {row.invoiceNo} · {row.guestName}
-                    </p>
-                    <p className="text-sm text-[#7a685e] break-words">
-                      {row.centerName} · {row.itemName}
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="font-semibold text-[#7a2e40] tabular-nums">₹{formatINR(row.due)}</p>
-                    <p className="text-xs text-[#a8988d]">due</p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2.5 text-xs text-[#7a685e]">
-                  <span className="inline-flex items-center rounded-full bg-[#f1ebe6] text-[#7a685e] font-medium px-2 py-0.5">
-                    {row.itemType || "—"}
-                  </span>
-                  <span>Collected ₹{formatINR(row.collected)}</span>
-                  <span>Next payment: {row.nextPaymentDate || "—"}</span>
-                  {hasPaymentPlan(row) && (
-                    <span className="inline-flex items-center rounded-full bg-[#e3ece7] text-[#3f5f4f] font-medium px-2 py-0.5">
-                      Payment plan
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-        </div>
+        <p className="text-xs text-[#a8988d] mt-3">
+          Showing {sorted.length} of {invoices?.length ?? 0} line items. Click a row for full detail.
+        </p>
       </div>
 
       {selected && <DetailPanel row={selected} onClose={() => setSelected(null)} />}
