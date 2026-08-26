@@ -79,7 +79,7 @@ function FilterSelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="border border-[#e7dcd4] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2e40] focus:border-transparent"
+      className="border border-[#e7dcd4] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2e40] focus:border-transparent max-w-full min-w-0"
     >
       <option value="All">{label}: All</option>
       {options.map((opt) => (
@@ -248,16 +248,26 @@ export default function DashboardPage() {
     label,
     sortKeyName,
     hideBelow,
+    align = "left",
   }: {
     label: string;
     sortKeyName: SortKey;
-    hideBelow?: "sm" | "md";
+    hideBelow?: "sm" | "md" | "lg";
+    align?: "left" | "right";
   }) {
     const active = sortKey === sortKeyName;
-    const visibility = hideBelow === "sm" ? "hidden sm:table-cell" : hideBelow === "md" ? "hidden md:table-cell" : "";
+    const visibility =
+      hideBelow === "sm" ? "hidden min-[47.5rem]:table-cell" :
+      hideBelow === "md" ? "hidden min-[60.625rem]:table-cell" :
+      hideBelow === "lg" ? "hidden min-[75.625rem]:table-cell" : "";
+    // Numeric columns' data cells are right-aligned (tabular-nums) — the
+    // header must match, or the label and its own values visibly don't
+    // line up. Right-aligned columns also get whitespace-nowrap instead
+    // of break-words: currency figures shouldn't wrap.
+    const alignCls = align === "right" ? "text-right whitespace-nowrap" : "text-left break-words";
     return (
       <th
-        className={`${visibility} text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-2 py-2.5 cursor-pointer select-none break-words`}
+        className={`${visibility} ${alignCls} text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-2 py-2.5 cursor-pointer select-none`}
         onClick={() => toggleSort(sortKeyName)}
       >
         <span className={active ? "text-[#7a2e40]" : ""}>
@@ -327,6 +337,7 @@ export default function DashboardPage() {
                 type="date"
                 aria-label="Sale date from"
                 value={saleDateStart}
+                max={getYesterdayIso()}
                 onChange={(e) => setSaleDateStart(e.target.value)}
                 className="border border-[#e7dcd4] rounded-lg px-2 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2e40] focus:border-transparent"
               />
@@ -335,6 +346,7 @@ export default function DashboardPage() {
                 type="date"
                 aria-label="Sale date to"
                 value={saleDateEnd}
+                max={getYesterdayIso()}
                 onChange={(e) => setSaleDateEnd(e.target.value)}
                 className="border border-[#e7dcd4] rounded-lg px-2 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2e40] focus:border-transparent"
               />
@@ -406,16 +418,22 @@ export default function DashboardPage() {
                 <SortHeader label="Invoice" sortKeyName="invoiceNo" />
                 <SortHeader label="Guest" sortKeyName="guestName" />
                 <SortHeader label="Center" sortKeyName="centerName" hideBelow="sm" />
-                <th className="hidden md:table-cell text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-2 py-2.5 break-words">
+                <th className="hidden min-[60.625rem]:table-cell text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-2 py-2.5 break-words">
                   Item
                 </th>
-                <th className="hidden sm:table-cell text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-2 py-2.5 break-words">
+                <th className="hidden min-[60.625rem]:table-cell text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-2 py-2.5 break-words">
+                  Sold by
+                </th>
+                <th className="hidden min-[47.5rem]:table-cell text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-2 py-2.5 whitespace-nowrap">
                   Type
                 </th>
-                <SortHeader label="Due" sortKeyName="due" />
-                <SortHeader label="Collected" sortKeyName="collected" hideBelow="md" />
+                <th className="hidden min-[75.625rem]:table-cell text-right text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-3 py-2.5 whitespace-nowrap">
+                  Sales (Inc. Tax)
+                </th>
+                <SortHeader label="Due" sortKeyName="due" align="right" />
+                <SortHeader label="Collected" sortKeyName="collected" hideBelow="lg" align="right" />
                 <SortHeader label="Next payment" sortKeyName="nextPaymentDate" hideBelow="sm" />
-                <th className="hidden sm:table-cell text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-1.5 py-2.5 break-words">
+                <th className="hidden min-[47.5rem]:table-cell text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-1.5 py-2.5 whitespace-nowrap">
                   Plan
                 </th>
               </tr>
@@ -423,14 +441,14 @@ export default function DashboardPage() {
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={9} className="px-3 py-8 text-center text-[#a8988d]">
+                  <td colSpan={11} className="px-3 py-8 text-center text-[#a8988d]">
                     Loading…
                   </td>
                 </tr>
               )}
               {!loading && sorted.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-3 py-8 text-center text-[#a8988d]">
+                  <td colSpan={11} className="px-3 py-8 text-center text-[#a8988d]">
                     No matching invoices.
                   </td>
                 </tr>
@@ -444,21 +462,25 @@ export default function DashboardPage() {
                   >
                     <td className="px-3 py-2.5 font-medium break-words">{row.invoiceNo}</td>
                     <td className="px-3 py-2.5 break-words">{row.guestName}</td>
-                    <td className="hidden sm:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.centerName}</td>
-                    <td className="hidden md:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.itemName}</td>
-                    <td className="hidden sm:table-cell px-1.5 py-2.5">
+                    <td className="hidden min-[47.5rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.centerName}</td>
+                    <td className="hidden min-[60.625rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.itemName}</td>
+                    <td className="hidden min-[60.625rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.soldBy || "—"}</td>
+                    <td className="hidden min-[47.5rem]:table-cell px-1.5 py-2.5 whitespace-nowrap">
                       <span className="inline-flex items-center rounded-full bg-[#f1ebe6] text-[#7a685e] text-xs font-medium px-1.5 py-0.5">
                         {row.itemType || "—"}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums font-medium">₹{formatINR(row.due)}</td>
-                    <td className="hidden md:table-cell px-3 py-2.5 text-right tabular-nums text-[#7a685e]">
+                    <td className="hidden min-[75.625rem]:table-cell px-3 py-2.5 text-right tabular-nums text-[#7a685e] whitespace-nowrap">
+                      ₹{formatINR(row.salesIncTax)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums font-medium whitespace-nowrap">₹{formatINR(row.due)}</td>
+                    <td className="hidden min-[75.625rem]:table-cell px-3 py-2.5 text-right tabular-nums text-[#7a685e] whitespace-nowrap">
                       ₹{formatINR(row.collected)}
                     </td>
-                    <td className="hidden sm:table-cell px-3 py-2.5 text-[#7a685e] break-words">
+                    <td className="hidden min-[47.5rem]:table-cell px-3 py-2.5 text-[#7a685e] whitespace-nowrap">
                       {row.nextPaymentDate || "—"}
                     </td>
-                    <td className="hidden sm:table-cell px-1.5 py-2.5">
+                    <td className="hidden min-[47.5rem]:table-cell px-1.5 py-2.5 whitespace-nowrap">
                       {hasPaymentPlan(row) ? (
                         <span className="inline-flex items-center rounded-full bg-[#e3ece7] text-[#3f5f4f] text-xs font-medium px-1.5 py-0.5">
                           Yes
