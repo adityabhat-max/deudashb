@@ -324,7 +324,7 @@ export default function DashboardPage() {
             </div>
           </div>
           <p className="text-sm text-[#a8988d] mt-2">
-            Live from the &quot;Payment terms&quot; sheet · Due invoices from 12 Aug 2026 to yesterday
+            Live from the &quot;Payment terms&quot; sheet · Due invoices from 13 Aug 2026 to yesterday
           </p>
         </header>
 
