@@ -14,10 +14,11 @@ function hasPaymentPlan(row: InvoiceRow): boolean {
   return Boolean(row.payment1Date);
 }
 
-// Sheet stores Sale Date as "DD-MM-YYYY" (confirmed against the live
-// sheet). Pure string conversion to "YYYY-MM-DD" — no Date object, no
-// timezone ambiguity — so range comparisons are just string comparisons.
-function saleDateToIso(s: string): string | null {
+// Sheet stores Sale Date and Next payment Date as "DD-MM-YYYY" (confirmed
+// against the live sheet). Pure string conversion to "YYYY-MM-DD" — no
+// Date object, no timezone ambiguity — so range comparisons are just
+// string comparisons.
+function ddmmyyyyToIso(s: string): string | null {
   const m = s.trim().match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
   if (!m) return null;
   const [, dd, mm, yyyy] = m;
@@ -25,9 +26,17 @@ function saleDateToIso(s: string): string | null {
 }
 
 // Client-only (called from an effect after mount, never during the
-// server render pass) so "yesterday" reflects the viewer's own local
-// timezone rather than the server's — those can disagree on which
+// server render pass) so "today"/"yesterday" reflect the viewer's own
+// local timezone rather than the server's — those can disagree on which
 // calendar day it is for hours at a time otherwise.
+function getTodayIso(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function getYesterdayIso(): string {
   const d = new Date();
   d.setDate(d.getDate() - 1);
@@ -35,6 +44,73 @@ function getYesterdayIso(): string {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
+}
+
+function addDaysIso(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + days);
+  const yyyy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+type PaymentUrgency = "overdue" | "soon" | null;
+
+// "soon" = due today through 3 days out; "overdue" = anything before
+// today. Only Next payment Date drives this — not the individual
+// installment dates — since that's the single field staff use to track
+// what's next.
+function paymentUrgency(nextPaymentDate: string, todayIso: string): PaymentUrgency {
+  const iso = ddmmyyyyToIso(nextPaymentDate);
+  if (!iso) return null;
+  if (iso < todayIso) return "overdue";
+  if (iso <= addDaysIso(todayIso, 3)) return "soon";
+  return null;
+}
+
+// Rounding-level noise (Sales(Inc. Tax) carries fractional-rupee tax
+// math) shouldn't trip a data-quality flag — only a gap large enough to
+// be a real entry error.
+const AMOUNT_TOLERANCE = 2;
+
+interface DataIssue {
+  label: string;
+  detail: string;
+}
+
+// A payment plan is written as one atomic note (per the SOP, staff type
+// the full plan in a single line) — so whenever 1st Payment Amount is
+// set, the plan is already complete, not partially filled in. That
+// means the installments can always be summed and checked as soon as
+// any of them exist, no "wait until all 3 are filled" logic needed.
+function getDataIssues(row: InvoiceRow): DataIssue[] {
+  const issues: DataIssue[] = [];
+
+  if (row.payment1Amount != null) {
+    const planTotal = (row.payment1Amount ?? 0) + (row.payment2Amount ?? 0) + (row.payment3Amount ?? 0);
+    const diff = planTotal - row.due;
+    if (Math.abs(diff) > AMOUNT_TOLERANCE) {
+      issues.push({
+        label: "Payment plan doesn't match Due",
+        detail:
+          diff > 0
+            ? `Installments add up to ₹${formatINR(planTotal)} — ₹${formatINR(diff)} more than the ₹${formatINR(row.due)} still Due.`
+            : `Installments add up to ₹${formatINR(planTotal)} — ₹${formatINR(-diff)} short of the ₹${formatINR(row.due)} still Due.`,
+      });
+    }
+  }
+
+  const reconDiff = row.collected + row.due - row.salesIncTax;
+  if (Math.abs(reconDiff) > AMOUNT_TOLERANCE) {
+    issues.push({
+      label: "Collected + Due doesn't match Sales",
+      detail: `Collected (₹${formatINR(row.collected)}) + Due (₹${formatINR(row.due)}) = ₹${formatINR(row.collected + row.due)}, not the ₹${formatINR(row.salesIncTax)} in Sales (Inc. Tax).`,
+    });
+  }
+
+  return issues;
 }
 
 function KpiCard({
@@ -139,9 +215,12 @@ export default function DashboardPage() {
     }
   }
 
+  const [todayIso, setTodayIso] = useState<string>("");
+
   useEffect(() => {
     load();
     setSaleDateEnd(getYesterdayIso());
+    setTodayIso(getTodayIso());
   }, []);
 
   async function handleLogout() {
@@ -198,7 +277,7 @@ export default function DashboardPage() {
       if (dueFilter === "PaidOff" && r.due > 0) return false;
 
       if (saleDateStart || saleDateEnd) {
-        const iso = saleDateToIso(r.saleDate);
+        const iso = ddmmyyyyToIso(r.saleDate);
         // Rows with an unparseable/blank Sale Date are excluded once any
         // date bound is active — there's no date to judge them against.
         if (!iso) return false;
@@ -326,6 +405,20 @@ export default function DashboardPage() {
           <p className="text-sm text-[#a8988d] mt-2">
             Live from the &quot;Payment terms&quot; sheet · Due invoices from 13 Aug 2026 to yesterday
           </p>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#7a685e] mt-2">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block w-3 h-3 rounded-sm bg-[#fbeaea] border border-[#e7b3b3]" />
+              Next payment due within 3 days
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block w-3 h-3 rounded-sm bg-[#eec4c4] border border-[#d99a9a]" />
+              Next payment overdue
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="text-[#b23b3b]">⚠</span>
+              Payment figures don&apos;t reconcile — click the row for detail
+            </span>
+          </div>
         </header>
 
         {error && (
@@ -488,43 +581,78 @@ export default function DashboardPage() {
                 </tr>
               )}
               {!loading &&
-                sorted.map((row, idx) => (
-                  <tr
-                    key={`${row.invoiceNo}-${idx}`}
-                    onClick={() => setSelected(row)}
-                    className="border-b border-[#f1ebe6] last:border-0 hover:bg-[#f6e2e7] cursor-pointer transition-colors align-top"
-                  >
-                    <td className="px-3 py-2.5 font-medium break-words">{row.invoiceNo}</td>
-                    <td className="px-3 py-2.5 break-words">{row.guestName}</td>
-                    <td className="hidden min-[47.5rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.centerName}</td>
-                    <td className="hidden min-[60.625rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.itemName}</td>
-                    <td className="hidden min-[60.625rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.soldBy || "—"}</td>
-                    <td className="hidden min-[47.5rem]:table-cell px-1.5 py-2.5 whitespace-nowrap">
-                      <span className="inline-flex items-center rounded-full bg-[#f1ebe6] text-[#7a685e] text-xs font-medium px-1.5 py-0.5">
-                        {row.itemType || "—"}
-                      </span>
-                    </td>
-                    <td className="hidden min-[75.625rem]:table-cell px-3 py-2.5 text-right tabular-nums text-[#7a685e] whitespace-nowrap">
-                      ₹{formatINR(row.salesIncTax)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums font-medium whitespace-nowrap">₹{formatINR(row.due)}</td>
-                    <td className="hidden min-[75.625rem]:table-cell px-3 py-2.5 text-right tabular-nums text-[#7a685e] whitespace-nowrap">
-                      ₹{formatINR(row.collected)}
-                    </td>
-                    <td className="hidden min-[47.5rem]:table-cell px-3 py-2.5 text-[#7a685e] whitespace-nowrap">
-                      {row.nextPaymentDate || "—"}
-                    </td>
-                    <td className="hidden min-[47.5rem]:table-cell px-1.5 py-2.5 whitespace-nowrap">
-                      {hasPaymentPlan(row) ? (
-                        <span className="inline-flex items-center rounded-full bg-[#e3ece7] text-[#3f5f4f] text-xs font-medium px-1.5 py-0.5">
-                          Yes
+                sorted.map((row, idx) => {
+                  const urgency = paymentUrgency(row.nextPaymentDate, todayIso);
+                  const issues = getDataIssues(row);
+                  const rowBg =
+                    urgency === "overdue"
+                      ? "bg-[#eec4c4] hover:bg-[#e6b5b5]"
+                      : urgency === "soon"
+                        ? "bg-[#fbeaea] hover:bg-[#f6dcdc]"
+                        : "hover:bg-[#f6e2e7]";
+                  return (
+                    <tr
+                      key={`${row.invoiceNo}-${idx}`}
+                      onClick={() => setSelected(row)}
+                      className={`border-b border-[#f1ebe6] last:border-0 cursor-pointer transition-colors align-top ${rowBg}`}
+                    >
+                      <td className="px-3 py-2.5 font-medium break-words">
+                        <span className="inline-flex items-center gap-1.5">
+                          {row.invoiceNo}
+                          {issues.length > 0 && (
+                            <span
+                              className="text-[#b23b3b]"
+                              title={issues.map((i) => i.detail).join(" ")}
+                              aria-label="Data quality issue"
+                            >
+                              ⚠
+                            </span>
+                          )}
                         </span>
-                      ) : (
-                        <span className="text-[#c3b8ae] text-xs">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-3 py-2.5 break-words">{row.guestName}</td>
+                      <td className="hidden min-[47.5rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.centerName}</td>
+                      <td className="hidden min-[60.625rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.itemName}</td>
+                      <td className="hidden min-[60.625rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.soldBy || "—"}</td>
+                      <td className="hidden min-[47.5rem]:table-cell px-1.5 py-2.5 whitespace-nowrap">
+                        <span className="inline-flex items-center rounded-full bg-[#f1ebe6] text-[#7a685e] text-xs font-medium px-1.5 py-0.5">
+                          {row.itemType || "—"}
+                        </span>
+                      </td>
+                      <td className="hidden min-[75.625rem]:table-cell px-3 py-2.5 text-right tabular-nums text-[#7a685e] whitespace-nowrap">
+                        ₹{formatINR(row.salesIncTax)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums font-medium whitespace-nowrap">₹{formatINR(row.due)}</td>
+                      <td className="hidden min-[75.625rem]:table-cell px-3 py-2.5 text-right tabular-nums text-[#7a685e] whitespace-nowrap">
+                        ₹{formatINR(row.collected)}
+                      </td>
+                      <td className="hidden min-[47.5rem]:table-cell px-3 py-2.5 text-[#7a685e] whitespace-nowrap">
+                        {row.nextPaymentDate || "—"}
+                        {urgency === "overdue" && (
+                          <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#8a2e2e]">Overdue</span>
+                        )}
+                        {urgency === "soon" && (
+                          <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#a15a5a]">Soon</span>
+                        )}
+                      </td>
+                      <td className="hidden min-[47.5rem]:table-cell px-1.5 py-2.5 whitespace-nowrap">
+                        {hasPaymentPlan(row) ? (
+                          <span
+                            className={`inline-flex items-center rounded-full text-xs font-medium px-1.5 py-0.5 ${
+                              issues.some((i) => i.label === "Payment plan doesn't match Due")
+                                ? "bg-[#f3d4d4] text-[#8a2e2e]"
+                                : "bg-[#e3ece7] text-[#3f5f4f]"
+                            }`}
+                          >
+                            {issues.some((i) => i.label === "Payment plan doesn't match Due") ? "Mismatch" : "Yes"}
+                          </span>
+                        ) : (
+                          <span className="text-[#c3b8ae] text-xs">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>
@@ -545,6 +673,9 @@ function DetailPanel({ row, onClose }: { row: InvoiceRow; onClose: () => void })
     { label: "2nd payment", date: row.payment2Date, amount: row.payment2Amount },
     { label: "3rd payment", date: row.payment3Date, amount: row.payment3Amount },
   ].filter((p) => p.date);
+  const planTotal = installments.reduce((sum, p) => sum + (p.amount ?? 0), 0);
+  const urgency = paymentUrgency(row.nextPaymentDate, getTodayIso());
+  const issues = getDataIssues(row);
 
   return (
     <div
@@ -606,9 +737,32 @@ function DetailPanel({ row, onClose }: { row: InvoiceRow; onClose: () => void })
           </div>
           <div>
             <dt className="text-[#a8988d] text-xs uppercase tracking-wide mb-0.5">Next payment date</dt>
-            <dd>{row.nextPaymentDate || "—"}</dd>
+            <dd>
+              {row.nextPaymentDate || "—"}
+              {urgency === "overdue" && (
+                <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#8a2e2e]">Overdue</span>
+              )}
+              {urgency === "soon" && (
+                <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#a15a5a]">Soon</span>
+              )}
+            </dd>
           </div>
         </dl>
+
+        {issues.length > 0 && (
+          <div className="mb-5 rounded-lg border border-[#e7b3b3] bg-[#fbeaea] px-3 py-2.5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#8a2e2e] mb-1.5">
+              ⚠ Data quality
+            </p>
+            <ul className="flex flex-col gap-1">
+              {issues.map((issue) => (
+                <li key={issue.label} className="text-sm text-[#8a2e2e]">
+                  {issue.detail}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="border-t border-[#e7dcd4] pt-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-[#a8988d] mb-3">
@@ -617,21 +771,29 @@ function DetailPanel({ row, onClose }: { row: InvoiceRow; onClose: () => void })
           {installments.length === 0 ? (
             <p className="text-sm text-[#a8988d]">No structured payment plan recorded for this invoice.</p>
           ) : (
-            <ul className="flex flex-col gap-2">
-              {installments.map((p) => (
-                <li
-                  key={p.label}
-                  className="flex items-center justify-between bg-[#faf5f1] rounded-lg px-3 py-2 text-sm"
-                >
-                  <span className="text-[#7a685e]">
-                    {p.label} · {p.date}
-                  </span>
-                  <span className="tabular-nums font-medium">
-                    {p.amount != null ? `₹${formatINR(p.amount)}` : "—"}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="flex flex-col gap-2">
+                {installments.map((p) => (
+                  <li
+                    key={p.label}
+                    className="flex items-center justify-between bg-[#faf5f1] rounded-lg px-3 py-2 text-sm"
+                  >
+                    <span className="text-[#7a685e]">
+                      {p.label} · {p.date}
+                    </span>
+                    <span className="tabular-nums font-medium">
+                      {p.amount != null ? `₹${formatINR(p.amount)}` : "—"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex items-center justify-between px-3 pt-2.5 text-sm">
+                <span className="text-[#a8988d]">Plan total vs. Due</span>
+                <span className="tabular-nums font-medium">
+                  ₹{formatINR(planTotal)} / ₹{formatINR(row.due)}
+                </span>
+              </div>
+            </>
           )}
         </div>
       </div>
