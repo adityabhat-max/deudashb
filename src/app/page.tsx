@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { InvoiceRow } from "@/lib/sheets";
 
-type SortKey = "invoiceNo" | "guestName" | "centerName" | "due" | "collected" | "nextPaymentDate";
+type SortKey = "invoiceNo" | "guestName" | "saleDate" | "centerName" | "due" | "collected" | "nextPaymentDate";
 type SortDir = "asc" | "desc";
 
 function formatINR(n: number): string {
@@ -313,6 +313,12 @@ export default function DashboardPage() {
       let cmp = 0;
       if (sortKey === "due" || sortKey === "collected") {
         cmp = a[sortKey] - b[sortKey];
+      } else if (sortKey === "saleDate" || sortKey === "nextPaymentDate") {
+        // Chronological, not lexicographic — "DD-MM-YYYY" sorts wrong as a
+        // plain string (e.g. "05-09-2026" would sort before "20-08-2026").
+        const aIso = ddmmyyyyToIso(a[sortKey]) ?? "";
+        const bIso = ddmmyyyyToIso(b[sortKey]) ?? "";
+        cmp = aIso.localeCompare(bIso);
       } else {
         cmp = String(a[sortKey]).localeCompare(String(b[sortKey]));
       }
@@ -544,6 +550,7 @@ export default function DashboardPage() {
               <tr className="border-b border-[#e7dcd4]">
                 <SortHeader label="Invoice" sortKeyName="invoiceNo" />
                 <SortHeader label="Guest" sortKeyName="guestName" />
+                <SortHeader label="Sale date" sortKeyName="saleDate" hideBelow="sm" />
                 <SortHeader label="Center" sortKeyName="centerName" hideBelow="sm" />
                 <th className="hidden min-[60.625rem]:table-cell text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-2 py-2.5 break-words">
                   Item
@@ -568,14 +575,14 @@ export default function DashboardPage() {
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={11} className="px-3 py-8 text-center text-[#a8988d]">
+                  <td colSpan={12} className="px-3 py-8 text-center text-[#a8988d]">
                     Loading…
                   </td>
                 </tr>
               )}
               {!loading && sorted.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="px-3 py-8 text-center text-[#a8988d]">
+                  <td colSpan={12} className="px-3 py-8 text-center text-[#a8988d]">
                     No matching invoices.
                   </td>
                 </tr>
@@ -611,6 +618,7 @@ export default function DashboardPage() {
                         </span>
                       </td>
                       <td className="px-3 py-2.5 break-words">{row.guestName}</td>
+                      <td className="hidden min-[47.5rem]:table-cell px-3 py-2.5 text-[#7a685e] whitespace-nowrap">{row.saleDate || "—"}</td>
                       <td className="hidden min-[47.5rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.centerName}</td>
                       <td className="hidden min-[60.625rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.itemName}</td>
                       <td className="hidden min-[60.625rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.soldBy || "—"}</td>
