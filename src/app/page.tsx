@@ -391,13 +391,21 @@ export default function DashboardPage() {
     return baseFiltered.filter((r) => itemTypeFilter.includes(r.itemType));
   }, [baseFiltered, itemTypeFilter]);
 
+  // A type's card shows its real total only while that type is checked in
+  // the Item Type filter — unchecked types show ₹0 rather than a number
+  // that doesn't match any row actually visible in the table below. An
+  // empty selection means "no filter" (same convention as Center/Sold
+  // by), so every type shows its real total in that case.
   const itemTypeBreakdown = useMemo(() => {
     const due = new Map<string, number>();
     for (const r of baseFiltered) {
       due.set(r.itemType, (due.get(r.itemType) || 0) + r.due);
     }
-    return itemTypes.map((type) => ({ type, due: due.get(type) || 0 }));
-  }, [baseFiltered, itemTypes]);
+    return itemTypes.map((type) => ({
+      type,
+      due: itemTypeFilter.length === 0 || itemTypeFilter.includes(type) ? due.get(type) || 0 : 0,
+    }));
+  }, [baseFiltered, itemTypes, itemTypeFilter]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
