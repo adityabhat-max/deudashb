@@ -14,6 +14,47 @@ function hasPaymentPlan(row: InvoiceRow): boolean {
   return Boolean(row.payment1Date);
 }
 
+interface CollectedBucket {
+  label: string;
+  test: (n: number) => boolean;
+}
+
+// "₹0" is its own bucket (nothing collected yet), separate from "₹0 –
+// ₹10,000" (some amount up to 10k). Ranges are ₹10,000-wide up to
+// ₹1,50,000, then ₹25,000-wide beyond that — extended dynamically so
+// every real Collected value in the data always has a bucket, however
+// high amounts eventually get.
+function buildCollectedBuckets(maxCollected: number): CollectedBucket[] {
+  const buckets: CollectedBucket[] = [{ label: "₹0", test: (n) => n === 0 }];
+
+  let lower = 0;
+  const fineStepCeiling = 150_000;
+  while (lower < fineStepCeiling) {
+    // Bound to fresh per-iteration consts, not the outer `lower` — every
+    // bucket's `test` closure must capture its own range, not whatever
+    // `lower` happens to hold once the loop finishes.
+    const bucketLower = lower;
+    const bucketUpper = bucketLower + 10_000;
+    buckets.push({
+      label: `₹${formatINR(bucketLower)} – ₹${formatINR(bucketUpper)}`,
+      test: (n) => n > bucketLower && n <= bucketUpper,
+    });
+    lower = bucketUpper;
+  }
+
+  while (lower < maxCollected) {
+    const bucketLower = lower;
+    const bucketUpper = bucketLower + 25_000;
+    buckets.push({
+      label: `₹${formatINR(bucketLower)} – ₹${formatINR(bucketUpper)}`,
+      test: (n) => n > bucketLower && n <= bucketUpper,
+    });
+    lower = bucketUpper;
+  }
+
+  return buckets;
+}
+
 // Sheet stores Sale Date and Next payment Date as "DD-MM-YYYY" (confirmed
 // against the live sheet). Pure string conversion to "YYYY-MM-DD" — no
 // Date object, no timezone ambiguity — so range comparisons are just
@@ -275,6 +316,7 @@ export default function DashboardPage() {
   const [nextPaymentFilter, setNextPaymentFilter] = useState<"All" | "Has" | "None">("All");
   const [planFilter, setPlanFilter] = useState<"All" | "Has" | "None">("All");
   const [dueFilter, setDueFilter] = useState<"All" | "DueOnly" | "PaidOff">("All");
+  const [collectedFilter, setCollectedFilter] = useState<string[]>([]);
   // Package + Product checked by default, Service excluded.
   const [itemTypeFilter, setItemTypeFilter] = useState<string[]>(DEFAULT_ITEM_TYPES);
   // Sale Date range filter. saleDateEnd defaults to "yesterday" (set in
@@ -331,6 +373,14 @@ export default function DashboardPage() {
     return Array.from(set).sort();
   }, [invoices]);
 
+  // Computed from the full unfiltered dataset (like centers/itemTypes
+  // above), not the currently-filtered rows, so the bucket list stays
+  // stable regardless of what else is filtered.
+  const collectedBuckets = useMemo(() => {
+    const max = invoices ? Math.max(0, ...invoices.map((r) => r.collected)) : 0;
+    return buildCollectedBuckets(max);
+  }, [invoices]);
+
   const soldByList = useMemo(() => {
     // Sourced from the Sheet6 staff roster (scoped to the selected
     // center(s)), not from who happens to have a due invoice — so everyone
@@ -368,6 +418,13 @@ export default function DashboardPage() {
       if (dueFilter === "DueOnly" && r.due <= 0) return false;
       if (dueFilter === "PaidOff" && r.due > 0) return false;
 
+      if (collectedFilter.length > 0) {
+        const matchesBucket = collectedBuckets
+          .filter((b) => collectedFilter.includes(b.label))
+          .some((b) => b.test(r.collected));
+        if (!matchesBucket) return false;
+      }
+
       if (saleDateStart || saleDateEnd) {
         const iso = ddmmyyyyToIso(r.saleDate);
         // Rows with an unparseable/blank Sale Date are excluded once any
@@ -384,7 +441,7 @@ export default function DashboardPage() {
         r.guestCode.toLowerCase().includes(q)
       );
     });
-  }, [invoices, query, centerFilter, soldByFilter, nextPaymentFilter, planFilter, dueFilter, saleDateStart, saleDateEnd]);
+  }, [invoices, query, centerFilter, soldByFilter, nextPaymentFilter, planFilter, dueFilter, collectedFilter, collectedBuckets, saleDateStart, saleDateEnd]);
 
   const filtered = useMemo(() => {
     if (itemTypeFilter.length === 0) return baseFiltered;
@@ -605,12 +662,19 @@ export default function DashboardPage() {
               options={["DueOnly", "PaidOff"]}
               optionLabels={{ DueOnly: "Still due", PaidOff: "Fully collected" }}
             />
+            <CheckboxFilter
+              label="Collected"
+              selected={collectedFilter}
+              onChange={setCollectedFilter}
+              options={collectedBuckets.map((b) => b.label)}
+            />
             {(centerFilter.length > 0 ||
               soldByFilter.length > 0 ||
               !sameSet(itemTypeFilter, DEFAULT_ITEM_TYPES) ||
               nextPaymentFilter !== "All" ||
               planFilter !== "All" ||
               dueFilter !== "All" ||
+              collectedFilter.length > 0 ||
               saleDateStart !== "" ||
               // Comparing against a freshly-computed "yesterday" rather
               // than a fixed default — moving the end date away from
@@ -627,6 +691,7 @@ export default function DashboardPage() {
                   setNextPaymentFilter("All");
                   setPlanFilter("All");
                   setDueFilter("All");
+                  setCollectedFilter([]);
                   setSaleDateStart("");
                   setSaleDateEnd(getYesterdayIso());
                 }}
