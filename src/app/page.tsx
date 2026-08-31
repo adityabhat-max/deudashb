@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { InvoiceRow } from "@/lib/sheets";
 
 type SortKey = "invoiceNo" | "guestName" | "saleDate" | "centerName" | "due" | "collected" | "nextPaymentDate";
@@ -167,6 +167,96 @@ function FilterSelect({
   );
 }
 
+// Default Item Type selection on first load — Package + Product only,
+// Service excluded. Compared against by set membership (order/duplicates
+// don't matter), not array equality, since "Clear filters" resets back
+// to this exact set rather than to nothing.
+const DEFAULT_ITEM_TYPES = ["Package", "Product"];
+
+function sameSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const bSet = new Set(b);
+  return a.every((x) => bSet.has(x));
+}
+
+// Multi-select checkbox dropdown — used where picking several values at
+// once is genuinely useful (Center, Sold by, Item type). An empty
+// selection means "no filter" (matches every value), same as the old
+// single-select "All" option.
+function CheckboxFilter({
+  label,
+  selected,
+  onChange,
+  options,
+}: {
+  label: string;
+  selected: string[];
+  onChange: (v: string[]) => void;
+  options: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  function toggle(opt: string) {
+    onChange(selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt]);
+  }
+
+  const summary =
+    selected.length === 0
+      ? `${label}: All`
+      : selected.length === 1
+        ? `${label}: ${selected[0]}`
+        : `${label}: ${selected.length} selected`;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="border border-[#e7dcd4] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2e40] focus:border-transparent max-w-[14rem] truncate text-left"
+      >
+        {summary}
+      </button>
+      {open && (
+        <div className="absolute z-20 mt-1 w-64 max-h-72 overflow-y-auto bg-white border border-[#e7dcd4] rounded-lg shadow-lg p-2">
+          <div className="flex items-center justify-between px-2 py-1 mb-1 border-b border-[#f1ebe6]">
+            <button type="button" onClick={() => onChange([])} className="text-xs text-[#7a2e40] hover:underline">
+              Clear
+            </button>
+            <button type="button" onClick={() => onChange(options)} className="text-xs text-[#7a2e40] hover:underline">
+              Select all
+            </button>
+          </div>
+          {options.map((opt) => (
+            <label
+              key={opt}
+              className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[#faf5f1] cursor-pointer text-sm"
+            >
+              <input
+                type="checkbox"
+                checked={selected.includes(opt)}
+                onChange={() => toggle(opt)}
+                className="accent-[#7a2e40]"
+              />
+              <span className="truncate">{opt}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const [invoices, setInvoices] = useState<InvoiceRow[] | null>(null);
   const [roster, setRoster] = useState<Record<string, string[]>>({});
@@ -180,12 +270,13 @@ export default function DashboardPage() {
   const [userScope, setUserScope] = useState<string>("all");
 
   const [query, setQuery] = useState("");
-  const [center, setCenter] = useState<string>("All");
-  const [soldBy, setSoldBy] = useState<string>("All");
+  const [centerFilter, setCenterFilter] = useState<string[]>([]);
+  const [soldByFilter, setSoldByFilter] = useState<string[]>([]);
   const [nextPaymentFilter, setNextPaymentFilter] = useState<"All" | "Has" | "None">("All");
   const [planFilter, setPlanFilter] = useState<"All" | "Has" | "None">("All");
   const [dueFilter, setDueFilter] = useState<"All" | "DueOnly" | "PaidOff">("All");
-  const [itemTypeFilter, setItemTypeFilter] = useState<string>("All");
+  // Package + Product checked by default, Service excluded.
+  const [itemTypeFilter, setItemTypeFilter] = useState<string[]>(DEFAULT_ITEM_TYPES);
   // Sale Date range filter. saleDateEnd defaults to "yesterday" (set in
   // the mount effect below, client-side only) — today's rows are
   // excluded by default since a same-day scrape may still be
@@ -241,19 +332,20 @@ export default function DashboardPage() {
   }, [invoices]);
 
   const soldByList = useMemo(() => {
-    // Sourced from the Sheet6 staff roster (scoped to the selected center),
-    // not from who happens to have a due invoice — so everyone on staff is
-    // selectable, including people with zero invoices right now.
-    if (center === "All") {
+    // Sourced from the Sheet6 staff roster (scoped to the selected
+    // center(s)), not from who happens to have a due invoice — so everyone
+    // on staff is selectable, including people with zero invoices right now.
+    if (centerFilter.length === 0) {
       const set = new Set(Object.values(roster).flat());
       return Array.from(set).sort();
     }
-    return [...(roster[center] || [])].sort();
-  }, [roster, center]);
+    const set = new Set(centerFilter.flatMap((c) => roster[c] || []));
+    return Array.from(set).sort();
+  }, [roster, centerFilter]);
 
-  function handleCenterChange(next: string) {
-    setCenter(next);
-    setSoldBy("All"); // avoid landing on a Sold By value that doesn't exist at the new center
+  function handleCenterChange(next: string[]) {
+    setCenterFilter(next);
+    setSoldByFilter([]); // avoid keeping a Sold By selection that doesn't exist at the new center(s)
   }
 
   // Everything except the Item Type filter — the item-type KPI cards use
@@ -264,8 +356,8 @@ export default function DashboardPage() {
     if (!invoices) return [];
     const q = query.trim().toLowerCase();
     return invoices.filter((r) => {
-      if (center !== "All" && r.centerName !== center) return false;
-      if (soldBy !== "All" && r.soldBy !== soldBy) return false;
+      if (centerFilter.length > 0 && !centerFilter.includes(r.centerName)) return false;
+      if (soldByFilter.length > 0 && !soldByFilter.includes(r.soldBy)) return false;
 
       if (nextPaymentFilter === "Has" && !r.nextPaymentDate) return false;
       if (nextPaymentFilter === "None" && r.nextPaymentDate) return false;
@@ -292,11 +384,11 @@ export default function DashboardPage() {
         r.guestCode.toLowerCase().includes(q)
       );
     });
-  }, [invoices, query, center, soldBy, nextPaymentFilter, planFilter, dueFilter, saleDateStart, saleDateEnd]);
+  }, [invoices, query, centerFilter, soldByFilter, nextPaymentFilter, planFilter, dueFilter, saleDateStart, saleDateEnd]);
 
   const filtered = useMemo(() => {
-    if (itemTypeFilter === "All") return baseFiltered;
-    return baseFiltered.filter((r) => r.itemType === itemTypeFilter);
+    if (itemTypeFilter.length === 0) return baseFiltered;
+    return baseFiltered.filter((r) => itemTypeFilter.includes(r.itemType));
   }, [baseFiltered, itemTypeFilter]);
 
   const itemTypeBreakdown = useMemo(() => {
@@ -456,14 +548,14 @@ export default function DashboardPage() {
           />
           <div className="flex flex-wrap items-center gap-3">
             {userScope === "all" ? (
-              <FilterSelect label="Center" value={center} onChange={handleCenterChange} options={centers} />
+              <CheckboxFilter label="Center" selected={centerFilter} onChange={handleCenterChange} options={centers} />
             ) : (
               <span className="border border-[#e7dcd4] rounded-lg px-3 py-2 text-sm bg-[#faf5f1] text-[#7a685e]">
                 Center: {userScope}
               </span>
             )}
-            <FilterSelect label="Sold by" value={soldBy} onChange={setSoldBy} options={soldByList} />
-            <FilterSelect label="Item type" value={itemTypeFilter} onChange={setItemTypeFilter} options={itemTypes} />
+            <CheckboxFilter label="Sold by" selected={soldByFilter} onChange={setSoldByFilter} options={soldByList} />
+            <CheckboxFilter label="Item type" selected={itemTypeFilter} onChange={setItemTypeFilter} options={itemTypes} />
             <div className="flex items-center gap-1.5 text-sm text-[#7a685e]">
               <span>Sale date</span>
               <input
@@ -505,9 +597,9 @@ export default function DashboardPage() {
               options={["DueOnly", "PaidOff"]}
               optionLabels={{ DueOnly: "Still due", PaidOff: "Fully collected" }}
             />
-            {(center !== "All" ||
-              soldBy !== "All" ||
-              itemTypeFilter !== "All" ||
+            {(centerFilter.length > 0 ||
+              soldByFilter.length > 0 ||
+              !sameSet(itemTypeFilter, DEFAULT_ITEM_TYPES) ||
               nextPaymentFilter !== "All" ||
               planFilter !== "All" ||
               dueFilter !== "All" ||
@@ -521,9 +613,9 @@ export default function DashboardPage() {
               <button
                 onClick={() => {
                   setQuery("");
-                  setCenter("All");
-                  setSoldBy("All");
-                  setItemTypeFilter("All");
+                  setCenterFilter([]);
+                  setSoldByFilter([]);
+                  setItemTypeFilter(DEFAULT_ITEM_TYPES);
                   setNextPaymentFilter("All");
                   setPlanFilter("All");
                   setDueFilter("All");
@@ -548,9 +640,9 @@ export default function DashboardPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[#e7dcd4]">
+                <SortHeader label="Sale date" sortKeyName="saleDate" />
                 <SortHeader label="Invoice" sortKeyName="invoiceNo" />
                 <SortHeader label="Guest" sortKeyName="guestName" />
-                <SortHeader label="Sale date" sortKeyName="saleDate" hideBelow="sm" />
                 <SortHeader label="Center" sortKeyName="centerName" hideBelow="sm" />
                 <th className="hidden min-[60.625rem]:table-cell text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-2 py-2.5 break-words">
                   Item
@@ -603,6 +695,7 @@ export default function DashboardPage() {
                       onClick={() => setSelected(row)}
                       className={`border-b border-[#f1ebe6] last:border-0 cursor-pointer transition-colors align-top ${rowBg}`}
                     >
+                      <td className="px-3 py-2.5 text-[#7a685e] whitespace-nowrap">{row.saleDate || "—"}</td>
                       <td className="px-3 py-2.5 font-medium break-words">
                         <span className="inline-flex items-center gap-1.5">
                           {row.invoiceNo}
@@ -618,7 +711,6 @@ export default function DashboardPage() {
                         </span>
                       </td>
                       <td className="px-3 py-2.5 break-words">{row.guestName}</td>
-                      <td className="hidden min-[47.5rem]:table-cell px-3 py-2.5 text-[#7a685e] whitespace-nowrap">{row.saleDate || "—"}</td>
                       <td className="hidden min-[47.5rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.centerName}</td>
                       <td className="hidden min-[60.625rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.itemName}</td>
                       <td className="hidden min-[60.625rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.soldBy || "—"}</td>
@@ -711,6 +803,10 @@ function DetailPanel({ row, onClose }: { row: InvoiceRow; onClose: () => void })
         </div>
 
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm mb-5">
+          <div>
+            <dt className="text-[#a8988d] text-xs uppercase tracking-wide mb-0.5">Invoice Number</dt>
+            <dd>{row.invoiceNo}</dd>
+          </div>
           <div>
             <dt className="text-[#a8988d] text-xs uppercase tracking-wide mb-0.5">Center</dt>
             <dd>{row.centerName}</dd>
