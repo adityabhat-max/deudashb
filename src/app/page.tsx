@@ -723,6 +723,9 @@ export default function DashboardPage() {
                 <th className="hidden min-[60.625rem]:table-cell text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-2 py-2.5 break-words">
                   Sold by
                 </th>
+                <th className="hidden min-[60.625rem]:table-cell text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-2 py-2.5 break-words">
+                  Created by
+                </th>
                 <th className="hidden min-[47.5rem]:table-cell text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-2 py-2.5 whitespace-nowrap">
                   Type
                 </th>
@@ -740,14 +743,14 @@ export default function DashboardPage() {
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={12} className="px-3 py-8 text-center text-[#a8988d]">
+                  <td colSpan={13} className="px-3 py-8 text-center text-[#a8988d]">
                     Loading…
                   </td>
                 </tr>
               )}
               {!loading && sorted.length === 0 && (
                 <tr>
-                  <td colSpan={12} className="px-3 py-8 text-center text-[#a8988d]">
+                  <td colSpan={13} className="px-3 py-8 text-center text-[#a8988d]">
                     No matching invoices.
                   </td>
                 </tr>
@@ -787,6 +790,7 @@ export default function DashboardPage() {
                       <td className="hidden min-[47.5rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.centerName}</td>
                       <td className="hidden min-[60.625rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.itemName}</td>
                       <td className="hidden min-[60.625rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.soldBy || "—"}</td>
+                      <td className="hidden min-[60.625rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.invoiceCreatedBy || "—"}</td>
                       <td className="hidden min-[47.5rem]:table-cell px-1.5 py-2.5 whitespace-nowrap">
                         <span className="inline-flex items-center rounded-full bg-[#f1ebe6] text-[#7a685e] text-xs font-medium px-1.5 py-0.5">
                           {row.itemType || "—"}
@@ -899,6 +903,10 @@ function DetailPanel({ row, onClose }: { row: InvoiceRow; onClose: () => void })
           <div>
             <dt className="text-[#a8988d] text-xs uppercase tracking-wide mb-0.5">Sold by</dt>
             <dd>{row.soldBy || "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-[#a8988d] text-xs uppercase tracking-wide mb-0.5">Created by</dt>
+            <dd>{row.invoiceCreatedBy || "—"}</dd>
           </div>
           <div>
             <dt className="text-[#a8988d] text-xs uppercase tracking-wide mb-0.5">Sales (Inc. Tax)</dt>

@@ -13,6 +13,7 @@ export interface InvoiceRow {
   centerName: string;
   due: number;
   collected: number;
+  invoiceCreatedBy: string;
   soldBy: string;
   salesIncTax: number;
   nextPaymentDate: string;
@@ -75,6 +76,7 @@ export async function fetchInvoices(): Promise<InvoiceRow[]> {
     centerName: idx("Center Name"),
     due: idx("Due"),
     collected: idx("Collected"),
+    invoiceCreatedBy: idx("Invoice created by"),
     soldBy: idx("Sold By"),
     salesIncTax: idx("Sales(Inc. Tax)"),
     nextPaymentDate: idx("Next payment Date"),
@@ -101,6 +103,7 @@ export async function fetchInvoices(): Promise<InvoiceRow[]> {
       centerName: get(i.centerName) || "(Unspecified)",
       due: cleanNumber(get(i.due)),
       collected: cleanNumber(get(i.collected)),
+      invoiceCreatedBy: get(i.invoiceCreatedBy),
       soldBy: get(i.soldBy),
       salesIncTax: cleanNumber(get(i.salesIncTax)),
       nextPaymentDate: get(i.nextPaymentDate),
