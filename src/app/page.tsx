@@ -14,6 +14,55 @@ function hasPaymentPlan(row: InvoiceRow): boolean {
   return Boolean(row.payment1Date);
 }
 
+const EXPORT_COLUMNS: { label: string; get: (r: InvoiceRow) => string | number }[] = [
+  { label: "Sale Date", get: (r) => r.saleDate },
+  { label: "Invoice No", get: (r) => r.invoiceNo },
+  { label: "Guest Name", get: (r) => r.guestName },
+  { label: "Guest Code", get: (r) => r.guestCode },
+  { label: "Center", get: (r) => r.centerName },
+  { label: "Item", get: (r) => r.itemName },
+  { label: "Item Type", get: (r) => r.itemType },
+  { label: "Sold By", get: (r) => r.soldBy },
+  { label: "Created By", get: (r) => r.invoiceCreatedBy },
+  { label: "Sales (Inc. Tax)", get: (r) => r.salesIncTax },
+  { label: "Collected", get: (r) => r.collected },
+  { label: "Due", get: (r) => r.due },
+  { label: "Next Payment Date", get: (r) => r.nextPaymentDate },
+  { label: "1st Payment Date", get: (r) => r.payment1Date },
+  { label: "1st Payment Amount", get: (r) => r.payment1Amount ?? "" },
+  { label: "2nd Payment Date", get: (r) => r.payment2Date },
+  { label: "2nd Payment Amount", get: (r) => r.payment2Amount ?? "" },
+  { label: "3rd Payment Date", get: (r) => r.payment3Date },
+  { label: "3rd Payment Amount", get: (r) => r.payment3Amount ?? "" },
+];
+
+function csvField(value: string | number): string {
+  const s = String(value);
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+// Exports whatever's currently on screen — the filtered/sorted rows the
+// caller already computed — not the full unfiltered dataset, so the CSV
+// always matches exactly what the viewer is looking at.
+function exportRowsToCsv(rows: InvoiceRow[]): void {
+  const lines = [
+    EXPORT_COLUMNS.map((c) => csvField(c.label)).join(","),
+    ...rows.map((r) => EXPORT_COLUMNS.map((c) => csvField(c.get(r))).join(",")),
+  ];
+  // Leading BOM so Excel opens the ₹ symbol and other non-ASCII text correctly.
+  const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const today = new Date();
+  const stamp = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `due-invoices-${stamp}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 interface CollectedBucket {
   label: string;
   test: (n: number) => boolean;
@@ -549,6 +598,14 @@ export default function DashboardPage() {
                 className="text-sm px-3 py-1.5 rounded-lg border border-[#e7dcd4] bg-white hover:bg-[#f6e2e7] transition-colors disabled:opacity-50"
               >
                 {loading ? "Refreshing…" : "Refresh"}
+              </button>
+              <button
+                onClick={() => exportRowsToCsv(sorted)}
+                disabled={loading || sorted.length === 0}
+                className="text-sm px-3 py-1.5 rounded-lg border border-[#e7dcd4] bg-white hover:bg-[#f6e2e7] transition-colors disabled:opacity-50"
+                title="Export the rows currently shown below, with the active filters and sort applied"
+              >
+                Export CSV
               </button>
               {userEmail && (
                 <div className="flex items-center gap-2 text-sm text-[#a8988d]">
