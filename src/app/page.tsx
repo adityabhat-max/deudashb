@@ -136,6 +136,9 @@ function getYesterdayIso(): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+// Earliest Sale Date with real data — matches "Payment terms" tab coverage.
+const EARLIEST_SALE_DATE_ISO = "2026-08-13";
+
 function addDaysIso(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
@@ -362,6 +365,7 @@ export default function DashboardPage() {
   const [query, setQuery] = useState("");
   const [centerFilter, setCenterFilter] = useState<string[]>([]);
   const [soldByFilter, setSoldByFilter] = useState<string[]>([]);
+  const [createdByFilter, setCreatedByFilter] = useState<string[]>([]);
   const [nextPaymentFilter, setNextPaymentFilter] = useState<"All" | "Has" | "None">("All");
   const [planFilter, setPlanFilter] = useState<"All" | "Has" | "None">("All");
   const [dueFilter, setDueFilter] = useState<"All" | "DueOnly" | "PaidOff">("All");
@@ -422,6 +426,15 @@ export default function DashboardPage() {
     return Array.from(set).sort();
   }, [invoices]);
 
+  // No roster tracks "Invoice created by" (unlike Sold by, which comes
+  // from the Sheet6 staff roster) — sourced directly from whoever
+  // actually appears in the loaded invoices.
+  const createdByList = useMemo(() => {
+    if (!invoices) return [];
+    const set = new Set(invoices.map((r) => r.invoiceCreatedBy).filter(Boolean));
+    return Array.from(set).sort();
+  }, [invoices]);
+
   // Computed from the full unfiltered dataset (like centers/itemTypes
   // above), not the currently-filtered rows, so the bucket list stays
   // stable regardless of what else is filtered.
@@ -457,6 +470,7 @@ export default function DashboardPage() {
     return invoices.filter((r) => {
       if (centerFilter.length > 0 && !centerFilter.includes(r.centerName)) return false;
       if (soldByFilter.length > 0 && !soldByFilter.includes(r.soldBy)) return false;
+      if (createdByFilter.length > 0 && !createdByFilter.includes(r.invoiceCreatedBy)) return false;
 
       if (nextPaymentFilter === "Has" && !r.nextPaymentDate) return false;
       if (nextPaymentFilter === "None" && r.nextPaymentDate) return false;
@@ -490,7 +504,7 @@ export default function DashboardPage() {
         r.guestCode.toLowerCase().includes(q)
       );
     });
-  }, [invoices, query, centerFilter, soldByFilter, nextPaymentFilter, planFilter, dueFilter, collectedFilter, collectedBuckets, saleDateStart, saleDateEnd]);
+  }, [invoices, query, centerFilter, soldByFilter, createdByFilter, nextPaymentFilter, planFilter, dueFilter, collectedFilter, collectedBuckets, saleDateStart, saleDateEnd]);
 
   const filtered = useMemo(() => {
     if (itemTypeFilter.length === 0) return baseFiltered;
@@ -677,6 +691,7 @@ export default function DashboardPage() {
               </span>
             )}
             <CheckboxFilter label="Sold by" selected={soldByFilter} onChange={setSoldByFilter} options={soldByList} />
+            <CheckboxFilter label="Created by" selected={createdByFilter} onChange={setCreatedByFilter} options={createdByList} />
             <CheckboxFilter label="Item type" selected={itemTypeFilter} onChange={setItemTypeFilter} options={itemTypes} />
             <div className="flex items-center gap-1.5 text-sm text-[#7a685e]">
               <span>Sale date</span>
@@ -684,6 +699,7 @@ export default function DashboardPage() {
                 type="date"
                 aria-label="Sale date from"
                 value={saleDateStart}
+                min={EARLIEST_SALE_DATE_ISO}
                 max={getYesterdayIso()}
                 onChange={(e) => setSaleDateStart(e.target.value)}
                 className="border border-[#e7dcd4] rounded-lg px-2 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2e40] focus:border-transparent"
@@ -693,6 +709,7 @@ export default function DashboardPage() {
                 type="date"
                 aria-label="Sale date to"
                 value={saleDateEnd}
+                min={EARLIEST_SALE_DATE_ISO}
                 max={getYesterdayIso()}
                 onChange={(e) => setSaleDateEnd(e.target.value)}
                 className="border border-[#e7dcd4] rounded-lg px-2 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2e40] focus:border-transparent"
@@ -727,6 +744,7 @@ export default function DashboardPage() {
             />
             {(centerFilter.length > 0 ||
               soldByFilter.length > 0 ||
+              createdByFilter.length > 0 ||
               !sameSet(itemTypeFilter, DEFAULT_ITEM_TYPES) ||
               nextPaymentFilter !== "All" ||
               planFilter !== "All" ||
@@ -744,6 +762,7 @@ export default function DashboardPage() {
                   setQuery("");
                   setCenterFilter([]);
                   setSoldByFilter([]);
+                  setCreatedByFilter([]);
                   setItemTypeFilter(DEFAULT_ITEM_TYPES);
                   setNextPaymentFilter("All");
                   setPlanFilter("All");
