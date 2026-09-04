@@ -792,6 +792,9 @@ export default function DashboardPage() {
                 <SortHeader label="Sale date" sortKeyName="saleDate" />
                 <SortHeader label="Invoice" sortKeyName="invoiceNo" />
                 <SortHeader label="Guest" sortKeyName="guestName" />
+                <th className="hidden min-[47.5rem]:table-cell text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-2 py-2.5 whitespace-nowrap">
+                  Guest code
+                </th>
                 <SortHeader label="Center" sortKeyName="centerName" hideBelow="sm" />
                 <th className="hidden min-[60.625rem]:table-cell text-left text-xs font-semibold uppercase tracking-wide text-[#a8988d] px-2 py-2.5 break-words">
                   Item
@@ -819,14 +822,14 @@ export default function DashboardPage() {
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={13} className="px-3 py-8 text-center text-[#a8988d]">
+                  <td colSpan={14} className="px-3 py-8 text-center text-[#a8988d]">
                     Loading…
                   </td>
                 </tr>
               )}
               {!loading && sorted.length === 0 && (
                 <tr>
-                  <td colSpan={13} className="px-3 py-8 text-center text-[#a8988d]">
+                  <td colSpan={14} className="px-3 py-8 text-center text-[#a8988d]">
                     No matching invoices.
                   </td>
                 </tr>
@@ -863,6 +866,7 @@ export default function DashboardPage() {
                         </span>
                       </td>
                       <td className="px-3 py-2.5 break-words">{row.guestName}</td>
+                      <td className="hidden min-[47.5rem]:table-cell px-2 py-2.5 text-[#7a685e] whitespace-nowrap">{row.guestCode || "—"}</td>
                       <td className="hidden min-[47.5rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.centerName}</td>
                       <td className="hidden min-[60.625rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.itemName}</td>
                       <td className="hidden min-[60.625rem]:table-cell px-3 py-2.5 text-[#7a685e] break-words">{row.soldBy || "—"}</td>
