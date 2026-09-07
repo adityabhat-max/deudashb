@@ -178,19 +178,30 @@ interface DataIssue {
 // set, the plan is already complete, not partially filled in. That
 // means the installments can always be summed and checked as soon as
 // any of them exist, no "wait until all 3 are filled" logic needed.
+//
+// Staff use two different conventions for what the plan totals to, and
+// both are legitimate — confirmed against 11 real plans in "Payment
+// terms", 10 of which cleanly matched one or the other:
+//   - The *entire* schedule from time of sale (matches Sales (Inc. Tax)),
+//     e.g. KMR21088: an already-collected 1st installment plus two still
+//     ahead sums to the full ₹1,00,000 sale, not the ₹60,000 now Due.
+//   - Just what's currently outstanding (matches Due), e.g. GKR67389:
+//     a plan written for the remaining ₹55,000 on a ₹1,10,000 sale.
+// So a plan only fails validation when it matches *neither* — that's a
+// real entry error, not a difference in convention (e.g. GM319: plan
+// totals ₹42,000 against a ₹52,244 Due/Sales split, a genuine ₹10,244
+// gap no reasonable reading of the note explains).
 function getDataIssues(row: InvoiceRow): DataIssue[] {
   const issues: DataIssue[] = [];
 
   if (row.payment1Amount != null) {
     const planTotal = (row.payment1Amount ?? 0) + (row.payment2Amount ?? 0) + (row.payment3Amount ?? 0);
-    const diff = planTotal - row.due;
-    if (Math.abs(diff) > AMOUNT_TOLERANCE) {
+    const matchesDue = Math.abs(planTotal - row.due) <= AMOUNT_TOLERANCE;
+    const matchesSales = Math.abs(planTotal - row.salesIncTax) <= AMOUNT_TOLERANCE;
+    if (!matchesDue && !matchesSales) {
       issues.push({
-        label: "Payment plan doesn't match Due",
-        detail:
-          diff > 0
-            ? `Installments add up to ₹${formatINR(planTotal)} — ₹${formatINR(diff)} more than the ₹${formatINR(row.due)} still Due.`
-            : `Installments add up to ₹${formatINR(planTotal)} — ₹${formatINR(-diff)} short of the ₹${formatINR(row.due)} still Due.`,
+        label: "Payment plan doesn't match Due or Sales",
+        detail: `Installments add up to ₹${formatINR(planTotal)} — matching neither the ₹${formatINR(row.due)} Due nor the ₹${formatINR(row.salesIncTax)} in Sales (Inc. Tax).`,
       });
     }
   }
