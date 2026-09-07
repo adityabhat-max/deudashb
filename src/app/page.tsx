@@ -1064,9 +1064,9 @@ function DetailPanel({ row, onClose }: { row: InvoiceRow; onClose: () => void })
                 ))}
               </ul>
               <div className="flex items-center justify-between px-3 pt-2.5 text-sm">
-                <span className="text-[#a8988d]">Plan total vs. Due</span>
+                <span className="text-[#a8988d]">Plan total vs. Invoice total</span>
                 <span className="tabular-nums font-medium">
-                  ₹{formatINR(planTotal)} / ₹{formatINR(row.due)}
+                  ₹{formatINR(planTotal)} / ₹{formatINR(row.salesIncTax)}
                 </span>
               </div>
             </>
