@@ -179,29 +179,24 @@ interface DataIssue {
 // means the installments can always be summed and checked as soon as
 // any of them exist, no "wait until all 3 are filled" logic needed.
 //
-// Staff use two different conventions for what the plan totals to, and
-// both are legitimate — confirmed against 11 real plans in "Payment
-// terms", 10 of which cleanly matched one or the other:
-//   - The *entire* schedule from time of sale (matches Sales (Inc. Tax)),
-//     e.g. KMR21088: an already-collected 1st installment plus two still
-//     ahead sums to the full ₹1,00,000 sale, not the ₹60,000 now Due.
-//   - Just what's currently outstanding (matches Due), e.g. GKR67389:
-//     a plan written for the remaining ₹55,000 on a ₹1,10,000 sale.
-// So a plan only fails validation when it matches *neither* — that's a
-// real entry error, not a difference in convention (e.g. GM319: plan
-// totals ₹42,000 against a ₹52,244 Due/Sales split, a genuine ₹10,244
-// gap no reasonable reading of the note explains).
+// The rule (confirmed): 1st + 2nd + 3rd must always equal the full
+// invoice amount (Sales (Inc. Tax)), no exceptions — the plan documents
+// the entire schedule from time of sale, not just what's currently
+// outstanding. Due shrinks as each installment's date passes and it
+// gets collected, so it's never the right thing to check against here.
 function getDataIssues(row: InvoiceRow): DataIssue[] {
   const issues: DataIssue[] = [];
 
   if (row.payment1Amount != null) {
     const planTotal = (row.payment1Amount ?? 0) + (row.payment2Amount ?? 0) + (row.payment3Amount ?? 0);
-    const matchesDue = Math.abs(planTotal - row.due) <= AMOUNT_TOLERANCE;
-    const matchesSales = Math.abs(planTotal - row.salesIncTax) <= AMOUNT_TOLERANCE;
-    if (!matchesDue && !matchesSales) {
+    const diff = planTotal - row.salesIncTax;
+    if (Math.abs(diff) > AMOUNT_TOLERANCE) {
       issues.push({
-        label: "Payment plan doesn't match Due or Sales",
-        detail: `Installments add up to ₹${formatINR(planTotal)} — matching neither the ₹${formatINR(row.due)} Due nor the ₹${formatINR(row.salesIncTax)} in Sales (Inc. Tax).`,
+        label: "Payment plan doesn't match Invoice total",
+        detail:
+          diff > 0
+            ? `Installments add up to ₹${formatINR(planTotal)} — ₹${formatINR(diff)} more than the ₹${formatINR(row.salesIncTax)} invoice total.`
+            : `Installments add up to ₹${formatINR(planTotal)} — ₹${formatINR(-diff)} short of the ₹${formatINR(row.salesIncTax)} invoice total.`,
       });
     }
   }
